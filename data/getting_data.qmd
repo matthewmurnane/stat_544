@@ -1,0 +1,160 @@
+---
+title: "getting_data"
+format: pdf
+---
+### Load in required libraries and api key to get census data
+```{r echo=FALSE}
+library(tidycensus)
+library(tidyverse)
+library(arrow)
+
+census_api_key("ce7d82d8400c63ca9d4e119f5b849640c5bc3767")
+```
+
+### Variable list names for ACS and then using those to get data on a tract level. This should be great for mapping
+```{r}
+vars_list <- c(
+  # Age and pop
+  total_pop = "B01003_001", #Estimate!!Total Total Population
+  median_age = "B01002_001", #Estimate!!Median age --!!Total: Median Age by Sex
+  
+  # Race (total population by race)
+  white_alone = "B02001_002",
+  black_alone = "B02001_003",
+  aian_alone = "B02001_004",  # American Indian/Alaska Native
+  asian_alone = "B02001_005",
+  nhpi_alone = "B02001_006",  # Native Hawaiian/Pacific Islander
+  other_alone = "B02001_007",
+  two_or_more = "B02001_008",
+  hispanic = "B03003_003",
+  
+  # Renter costs
+  gross_rent = "B25070_001", #Gross Rent as a Percentage of Household Income in the Past 12 Months
+  
+  # Commuting
+  public_transit = "B08301_010", #Means of Transportation to Work , public transport
+  total_commuters = "B08301_001", #Means of Transportation to Work
+  
+  # Poverty
+  poverty_status = "C17002_001", #Ratio of Income to Poverty Level in the Past 12 Months
+  
+  # Education (25 years and over)
+  total_edu = "B15003_001", #Educational Attainment for the Population 25 Years and
+  less_than_hs = "B15003_002", #Estimate!!Total:!!No schooling completed
+  GED = "B15003_018", #Estimate!!Total:!!GED or alternative credential
+  hs_grad = "B15003_017", #Estimate!!Total:!!Regular high school diploma
+  some_college = "B15003_019", #Estimate!!Total:!!Some college, less than 1 year
+  bachelors = "B15003_022", #Estimate!!Total:!!Bachelor's degree
+  masters = "B15003_023", #Estimate!!Total:!!Master's degree
+  professional = "B15003_024", #Estimate!!Total:!!Professional school degree
+  doctorate = "B15003_025", #Estimate!!Total:!!Doctorate degree
+  
+  # Children in household
+  households_with_children = "B11005_002", #Households by Presence of People Under 18 Years by 
+  
+  # Household income
+  median_hh_income = "B19013_001", #Estimate!!Median household income in the past 12 mon
+  
+  # Work per week (usual hours worked)
+  worked_hrs = "B23020_001", #Estimate!!Mean usual hours--!!Total:
+  
+  # Disability
+  with_disability = "B18101_001", #Estimate!!Total: Disability
+  
+  # Employment
+  in_labor_force = "B23025_002", #stimate!!Total:!!In labor force:
+  employed = "B23025_004",  #Estimate!!Total:!!In labor force:!!Civilian labor force:!!Em
+  
+  # SNAP benefits
+  received_snap = "B22003_002", #Estimate!!Total:!!Household received Food Stamps/SNAP in the past 12 months:
+  
+  # Family size and type
+  total_families = "B11001_001", #Household Type (Including Living Alone)
+  married_couple = "B11001_003", #stimate!!Total:!!Family households:!!Married-couple fa
+  
+  # Health insurance
+  with_health_ins = "B27001_001", #Estimate!!Total Health Insurance Coverage Status by Sex by Age
+   
+  # Rent as % of income
+  rent_50plus_pct = "B25070_010", #Estimate!!Total:!!50.0 percent or more 
+  
+  # Citizenship
+  native_citizen = "B05001_002", #Estimate!!Total:!!U.S. citizen, born in the United States
+  naturalized = "B05001_005", #Estimate!!Total:!!U.S. citizen by naturalization
+  not_citizen = "B05001_006" #Estimate!!Total:!!Not a U.S. citizen
+)
+```
+
+```{r}
+la_tracts <- get_acs(
+  geography = "tract",
+  variables = vars_list,
+  state = "CA",
+  county = "Los Angeles",
+  year = 2024,
+  survey = "acs5",
+  #geometry = TRUE, Uncomment this when ready to map on the tract level if we want to do this
+  output = "wide"
+)
+```
+
+### Getting pums data. This is on an individual level. First we'll extract the codes for LA County. Then find our variables and get the data
+```{r}
+ca_pumas <- get_acs(
+  geography = "puma",
+  variables = "B01003_001", 
+  state = "CA",
+  year = 2023,
+  survey = "acs5"
+)
+
+# Filter for LA County
+la_pumas_only <- ca_pumas %>% 
+  filter(grepl("Los Angeles", NAME))
+
+# Get just the PUMA codes
+la_puma_codes <- la_pumas_only %>% 
+  pull(GEOID) %>% 
+  unique()
+
+```
+
+
+```{r}
+la_pums <- get_pums(
+  variables = c(
+    "AGEP", # Age
+    "RAC1P", # Race
+    "HISP", # Hispanic origin
+    "GRPIP", # Gross rent as % of income
+    "GRNTP",# Gross rent
+    "JWTRNS", # Means of transportation to work
+    "POVPIP", # Poverty ratio
+    "SCHL",  # Educational attainment
+    "HUPAC",  # Presence of children
+    "HINCP",  # Household income
+    "WKHP",  # Hours worked per week
+    "DIS",  # Disability
+    "ESR", # Employment status
+    "FS",   # SNAP benefits
+    "HICOV", # Health insurance or not
+    "HHT2",  # Household type
+    "CIT" # Citizenship
+  ),
+  state = "CA",
+  puma = la_puma_codes,
+  survey = "acs1",
+  year = 2024,
+  rep_weights = "person"
+)
+```
+
+```{r}
+write_parquet(la_pums, "la_pums_individual_2024_acs.parquet")
+```
+
+
+```{r}
+glimpse(la_pums)
+```
+
