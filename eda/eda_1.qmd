@@ -1,0 +1,20 @@
+---
+title: "EDA 1: Exploring Variables"
+format: pdf
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+
+data <- read_parquet("../data/la_pums_individual_2024_acs.parquet")
+```
+
+```{r}
+glimpse(data[1:23])
+```
+
+```{r}
+length(unique(data$PUMA))
+```
+
