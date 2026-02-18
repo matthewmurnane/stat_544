@@ -18,3 +18,7 @@ glimpse(data[1:23])
 length(unique(data$PUMA))
 ```
 
+```{r}
+colnames(data)
+```
+

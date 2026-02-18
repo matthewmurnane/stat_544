@@ -104,8 +104,8 @@ ca_pumas <- get_acs(
   geography = "puma",
   variables = "B01003_001", 
   state = "CA",
-  year = 2023,
-  survey = "acs5"
+  year = 2024,
+  survey = "acs1"
 )
 
 # Filter for LA County
@@ -117,6 +117,7 @@ la_puma_codes <- la_pumas_only %>%
   pull(GEOID) %>% 
   unique()
 
+la_puma_codes <- substring(la_puma_codes, 3)
 ```
 
 
@@ -156,5 +157,22 @@ write_parquet(la_pums, "la_pums_individual_2024_acs.parquet")
 
 ```{r}
 glimpse(la_pums)
+```
+
+```{r}
+test <- get_pums(
+  variables = c(
+    "AGEP" # Age
+  ),
+  state = "CA",
+  puma = la_puma_codes,
+  survey = "acs1",
+  year = 2024,
+  rep_weights = "person"
+)
+```
+
+```{r}
+glimpse(test)
 ```
 

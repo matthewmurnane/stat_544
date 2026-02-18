@@ -1,0 +1,221 @@
+---
+title: "processing_data"
+format: pdf
+---
+
+```{r echo=FALSE}
+library(tidyverse)
+library(arrow)
+
+data <- read_parquet("la_pums_individual_2024_acs.parquet")
+```
+
+```{r}
+glimpse(data[1:23])
+```
+
+```{r}
+# Make age numeric
+data$AGEP <- as.numeric(data$AGEP)
+
+# Define Race
+data <- data %>% 
+    mutate(RAC1P = case_when(
+      RAC1P == "1" ~ "White",
+      RAC1P == "2" ~ "Black",
+      RAC1P == "3" ~ "American Native",
+      RAC1P == "4" ~ "Native Alaskan",
+      RAC1P == "5" ~ "Other",
+      RAC1P == "6" ~ "Asian",
+      RAC1P == "7" ~ "Native Hawaiin or Pacific Islander",
+      RAC1P == "8" ~ "Other",
+      RAC1P == "9" ~ "Other"
+    ))
+
+# Define Hispanic
+data <- data %>%
+  mutate(HISP = case_when(
+    HISP == "01" ~ "Not Spanish/Hispanic/Latino",
+    HISP == "02" ~ "Mexican",
+    HISP == "03" ~ "Puerto Rican",
+    HISP == "04" ~ "Cuban",
+    HISP == "05" ~ "Dominican",
+    HISP == "06" ~ "Costa Rican",
+    HISP == "07" ~ "Guatemalan",
+    HISP == "08" ~ "Honduran",
+    HISP == "09" ~ "Nicaraguan",
+    HISP == "10" ~ "Panamanian",
+    HISP == "11" ~ "Salvadoran",
+    HISP == "12" ~ "Other Central American",
+    HISP == "13" ~ "Argentinean",
+    HISP == "14" ~ "Bolivian",
+    HISP == "15" ~ "Chilean",
+    HISP == "16" ~ "Colombian",
+    HISP == "17" ~ "Ecuadorian",
+    HISP == "18" ~ "Paraguayan",
+    HISP == "19" ~ "Peruvian",
+    HISP == "20" ~ "Uruguayan",
+    HISP == "21" ~ "Venezuelan",
+    HISP == "22" ~ "Other South American",
+    HISP == "23" ~ "Spaniard",
+    HISP == "24" ~ "All Other Spanish/Hispanic/Latino"
+  ))
+  
+# Gross rent as % of income
+data$GRPIP <- as.numeric(data$GRPIP)
+data <- data %>% 
+  mutate(GRPIP = na_if(GRPIP, 0))
+
+#Gross rent
+data$GRNTP <- as.numeric(data$GRNTP)
+data <- data %>% 
+  mutate(GRNTP = na_if(GRPIP, 0))
+
+# Means of transportation
+data <- data %>%
+  mutate(JWTRNS = case_when(
+    JWTRNS == "0" ~ NA,
+    JWTRNS == "1" ~ "Car, truck, or van",
+    JWTRNS == "2" ~ "Bus",
+    JWTRNS == "3" ~ "Subway or elevated rail",
+    JWTRNS == "4" ~ "Long-distance train or commuter rail",
+    JWTRNS == "5" ~ "Light rail, streetcar, or trolley",
+    JWTRNS == "6" ~ "Ferryboat",
+    JWTRNS == "7" ~ "Taxi or ride-hailing services",
+    JWTRNS == "8" ~ "Motorcycle",
+    JWTRNS == "9" ~ "Bicycle",
+    JWTRNS == "10" ~ "Walked",
+    JWTRNS == "11" ~ "Worked from home",
+    JWTRNS == "12" ~ "Other method"
+  ))
+
+# Income-to-poverty ratio
+data$POVPIP <- as.numeric(data$POVPIP)
+data <- data %>% 
+  mutate(POVPIP = na_if(GRPIP, -1))
+
+# Educational Attainment
+data <- data %>%
+  mutate(SCHL = case_when(
+    SCHL == "0" ~ NA,
+    SCHL == "1" ~ "No schooling completed",
+    SCHL == "2" ~ "Nursery school, preschool",
+    SCHL == "3" ~ "Kindergarten",
+    SCHL == "4" ~ "Grade 1",
+    SCHL == "5" ~ "Grade 2",
+    SCHL == "6" ~ "Grade 3",
+    SCHL == "7" ~ "Grade 4",
+    SCHL == "8" ~ "Grade 5",
+    SCHL == "9" ~ "Grade 6",
+    SCHL == "10" ~ "Grade 7",
+    SCHL == "11" ~ "Grade 8",
+    SCHL == "12" ~ "Grade 9",
+    SCHL == "13" ~ "Grade 10",
+    SCHL == "14" ~ "Grade 11",
+    SCHL == "15" ~ "12th grade - no diploma",
+    SCHL == "16" ~ "Regular high school diploma",
+    SCHL == "17" ~ "GED or alternative credential",
+    SCHL == "18" ~ "Some college, but less than 1 year",
+    SCHL == "19" ~ "1 or more years of college credit, no degree",
+    SCHL == "20" ~ "Associate's degree",
+    SCHL == "21" ~ "Bachelor's degree",
+    SCHL == "22" ~ "Master's degree",
+    SCHL == "23" ~ "Professional degree beyond a bachelor's degree",
+    SCHL == "24" ~ "Doctorate degree",
+  ))
+
+# Presence and age of children
+data <- data %>%
+  mutate(HUPAC = case_when(
+    HUPAC == "0" ~ NA,
+    HUPAC == "1" ~ "With children under 6 years only",
+    HUPAC == "2" ~ "With children 6 to 17 years only",
+    HUPAC == "3" ~ "With children under 6 years and 6 to 17 years",
+    HUPAC == "4" ~ "No children"
+  ))
+
+#Household Income
+data <- data %>%
+  mutate(HINCP = case_when(
+    HINCP == -60000 ~ NA_real_,
+    TRUE ~ as.numeric(HINCP)
+  ))
+
+# Work hours
+data <- data %>%
+  mutate(WKHP = case_when(
+    WKHP == "0" ~ NA_real_, 
+    TRUE ~ as.numeric(WKHP)
+  ))
+
+#Disability
+data <- data %>%
+  mutate(DIS = case_when(
+    DIS == "1" ~ "With a disability",
+    DIS == "2" ~ "Without a disability"
+  ))
+
+# Employment code
+data <- data %>%
+  mutate(ESR = case_when(
+    ESR == "0" ~ NA,
+    ESR == "1" ~ "Civilian employed, at work",
+    ESR == "2" ~ "Civilian employed, with a job but not at work",
+    ESR == "3" ~ "Unemployed",
+    ESR == "4" ~ "Armed Forces, At Work",
+    ESR == "5" ~ "Armed Forces, With a Job But Not At Work",
+    ESR == "6" ~ "Not in Labor Force"
+  ))
+
+# SNAP Benefits
+data <- data %>%
+  mutate(FS = case_when(
+    FS == "0" ~ NA,
+    FS == "1" ~ "Yes",
+    FS == "2" ~ "No"
+  ))
+
+# Health insurance
+data <- data %>%
+  mutate(HICOV = case_when(
+    HICOV == "1" ~ "With health insurance coverage",
+    HICOV == "2" ~ "No health insurance coverage",
+    TRUE ~ HICOV
+  ))
+
+# Household / Family type
+data <- data %>%
+  mutate(HHT2 = case_when(
+    HHT2 == "0" ~ NA,
+    HHT2 == "1" ~ "Married couple household with children of the householder less than 18",
+    HHT2 == "2" ~ "Married couple household, no children of the householder less than 18",
+    HHT2 == "3" ~ "Cohabiting couple household with children of the householder less than 18",
+    HHT2 == "4" ~ "Cohabiting couple household, no children of the householder less than 18",
+    HHT2 == "5" ~ "Female householder, no spouse/partner present, living alone",
+    HHT2 == "6" ~ "Female householder, no spouse/partner present, with children of the householder less than 18",
+    HHT2 == "7" ~ "Female householder, no spouse/partner present, with relatives, no children of the householder less than 18",
+    HHT2 == "8" ~ "Female householder, no spouse/partner present, only nonrelatives present",
+    HHT2 == "9" ~ "Male householder, no spouse/partner present, living alone",
+    HHT2 == "10" ~ "Male householder, no spouse/partner present, with children of the householder less than 18",
+    HHT2 == "11" ~ "Male householder, no spouse/partner present, with relatives, no children of the householder less than 18",
+    HHT2 == "12" ~ "Male householder, no spouse/partner present, only nonrelatives present",
+    TRUE ~ HHT2
+  ))
+
+# citizenship
+data <- data %>%
+  mutate(CIT = case_when(
+    CIT == "1" ~ "Born in the United States",
+    CIT == "2" ~ "Born in Puerto Rico, Guam, the U.S. Virgin Islands, or Northern Marianas",
+    CIT == "3" ~ "Born abroad of U.S. citizen parent or parents",
+    CIT == "4" ~ "U.S. citizen by naturalization",
+    CIT == "5" ~ "Not a U.S. citizen",
+    TRUE ~ CIT
+  ))
+```
+
+```{r}
+library(arrow)
+write_parquet("clean_data.parquet")
+```
+
