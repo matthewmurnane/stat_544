@@ -216,6 +216,7 @@ data <- data %>%
 
 ```{r}
 library(arrow)
-write_parquet("clean_data.parquet")
+write_parquet(data,
+              "clean_data.parquet")
 ```
 

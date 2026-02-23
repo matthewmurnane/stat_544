@@ -7,7 +7,7 @@ format: pdf
 library(tidyverse)
 library(arrow)
 
-data <- read_parquet("../data/la_pums_individual_2024_acs.parquet")
+data <- read_parquet("../data/clean_data.parquet")
 ```
 
 ```{r}
