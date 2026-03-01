@@ -1,0 +1,46 @@
+---
+title: "education_related_eda"
+format: pdf
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(ggthemes)
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r}
+glimpse(data[1:27])
+```
+
+```{r}
+education_eda_30 <- data %>% 
+  filter(age >= 30) %>% 
+  select(age,
+         race,
+         gross_rent,
+         income_personal,
+         education,
+         health_insurance,
+         snap_benefits,
+         puma)
+
+glimpse(education_eda_30)
+```
+
+```{r}
+education_eda_30 %>%
+  filter(income_personal <= 500000) %>% 
+  ggplot() +
+    geom_boxplot(aes(x = income_personal / 1000,
+                     y = reorder(education, income_personal)),
+                 outlier.shape = NA) + 
+  theme_few() +
+  ylab("") +
+  xlab("Income (thousands)") +
+  labs(title = "Higher Education Level Is Associated with Higher Income",
+       caption = "Source: ACS PUMS 2024 for LA County")
+```
+

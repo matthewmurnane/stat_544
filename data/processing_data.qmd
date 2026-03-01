@@ -110,28 +110,28 @@ data <- data %>%
   mutate(SCHL = case_when(
     SCHL == "0" ~ NA,
     SCHL == "1" ~ "No schooling completed",
-    SCHL == "2" ~ "Nursery school, preschool",
-    SCHL == "3" ~ "Kindergarten",
-    SCHL == "4" ~ "Grade 1",
-    SCHL == "5" ~ "Grade 2",
-    SCHL == "6" ~ "Grade 3",
-    SCHL == "7" ~ "Grade 4",
-    SCHL == "8" ~ "Grade 5",
-    SCHL == "9" ~ "Grade 6",
-    SCHL == "10" ~ "Grade 7",
-    SCHL == "11" ~ "Grade 8",
-    SCHL == "12" ~ "Grade 9",
-    SCHL == "13" ~ "Grade 10",
-    SCHL == "14" ~ "Grade 11",
-    SCHL == "15" ~ "12th grade - no diploma",
+    SCHL == "2" ~ "Less than High School",
+    SCHL == "3" ~ "Less than High School",
+    SCHL == "4" ~ "Less than High School",
+    SCHL == "5" ~ "Less than High School",
+    SCHL == "6" ~ "Less than High School",
+    SCHL == "7" ~ "Less than High School",
+    SCHL == "8" ~ "Less than High School",
+    SCHL == "9" ~ "Less than High School",
+    SCHL == "10" ~ "Less than High School",
+    SCHL == "11" ~ "Less than High School",
+    SCHL == "12" ~ "Less than High School",
+    SCHL == "13" ~ "Less than High School",
+    SCHL == "14" ~ "Less than High School",
+    SCHL == "15" ~ "Less than High School",
     SCHL == "16" ~ "Regular high school diploma",
     SCHL == "17" ~ "GED or alternative credential",
-    SCHL == "18" ~ "Some college, but less than 1 year",
-    SCHL == "19" ~ "1 or more years of college credit, no degree",
+    SCHL == "18" ~ "Some college",
+    SCHL == "19" ~ "Some college",
     SCHL == "20" ~ "Associate's degree",
     SCHL == "21" ~ "Bachelor's degree",
     SCHL == "22" ~ "Master's degree",
-    SCHL == "23" ~ "Professional degree beyond a bachelor's degree",
+    SCHL == "23" ~ "Post-bacc professional degree",
     SCHL == "24" ~ "Doctorate degree",
   ))
 
@@ -189,8 +189,8 @@ data <- data %>%
 # Health insurance
 data <- data %>%
   mutate(HICOV = case_when(
-    HICOV == "1" ~ "With health insurance coverage",
-    HICOV == "2" ~ "No health insurance coverage",
+    HICOV == "1" ~ "Yes",
+    HICOV == "2" ~ "No",
     TRUE ~ HICOV
   ))
 
@@ -223,14 +223,33 @@ data <- data %>%
     CIT == "5" ~ "Not a U.S. citizen",
     TRUE ~ CIT
   ))
+
+# adjustment for GRNTP
+data$ADJHSG <- as.numeric(data$ADJHSG)
+
+# adjustment for PINCP
+data$ADJINC <- as.numeric(data$ADJINC)
 ```
 
 ```{r}
 data <- data %>%
-  rename_with(tolower) %>% 
-  rename(race = rac1p)
+  rename_with(tolower)
+
+data <- data %>%
+  rename(age = agep,
+         race = rac1p,
+         gross_rent = grntp,
+         education = schl,
+         income_personal = pincp,
+         health_insurance = hicov,
+         snap_benefits = fs,
+         income_household = hincp)
 ```
 
+```{r}
+data <- data %>%
+  mutate(race = ifelse(hisp != "Not Spanish/Hispanic/Latino", "Hispanic", race))
+```
 
 ```{r}
 library(arrow)
