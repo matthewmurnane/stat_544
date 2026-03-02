@@ -249,6 +249,11 @@ data <- data %>%
 ```{r}
 data <- data %>%
   mutate(race = ifelse(hisp != "Not Spanish/Hispanic/Latino", "Hispanic", race))
+
+data <- data %>% 
+  mutate(race_simp = ifelse(race %in% c("White", "Black", "Asian", "Hispanic"),
+                            race,
+                            "Other"))
 ```
 
 ```{r}

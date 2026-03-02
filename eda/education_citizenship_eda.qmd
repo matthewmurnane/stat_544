@@ -1,0 +1,61 @@
+---
+title: "education_citizenship_eda"
+format: pdf
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(ggthemes)
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r}
+glimpse(data[1:27])
+```
+
+```{r}
+citizen_eda_30 <- data %>% 
+  select(age, income_personal, cit, education, esr) %>% 
+  filter(age > 30,
+         esr != "Not in Labor Force") %>% 
+  mutate(income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
+                                     income_personal <= 30000 ~ "15k-30k",
+                                     income_personal <= 60000 ~ "30k-60k",
+                                     income_personal <= 90000 ~ "60k-90k",
+                                     income_personal <= 120000 ~ "90k-120k",
+                                     income_personal <= 150000 ~ "120k-150k",
+                                     income_personal > 150000 ~ "150k+"))
+
+glimpse(citizen_eda_30)
+```
+
+
+```{r}
+citizen_eda_30 %>% 
+  mutate(cit_simplified = ifelse(cit != "Not a U.S. citizen",
+                                 "U.S. Citizen",
+                                 "Not a U.S. Citizen")) %>% 
+  group_by(income_brackets, cit_simplified) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(cit_simplified) %>%
+  mutate(prop = n / sum(n)) %>%
+  mutate(income_brackets = factor(income_brackets, 
+                                levels = c("0-15k", "15k-30k", "30k-60k", 
+                                           "60k-90k", "90k-120k", "120k-150k", "150k+"))) %>% 
+  ggplot() +
+    geom_col(aes(x = income_brackets,
+                 y = prop,
+                 fill = cit_simplified),
+             position = "dodge") +
+    theme_few() +
+    labs(fill = "Citizenship",
+         title = "Citizenship Determines Likelihood of Income",
+         caption = "Source: ACS PUMS 2024 for LA County") +
+    xlab("") +
+    ylab("") +
+    theme(plot.title = element_text(hjust = 0.5)) +
+    scale_fill_manual(values = c("#377eb8", "#4daf4a"))
+```
+
