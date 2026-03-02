@@ -7,6 +7,7 @@ format: pdf
 library(tidyverse)
 library(arrow)
 library(ggthemes)
+library(ggstatsplot)
 
 data <- read_parquet("../data/clean_data.parquet")
 ```
@@ -17,7 +18,7 @@ glimpse(data[1:27])
 
 ```{r}
 citizen_eda_30 <- data %>% 
-  select(age, income_personal, cit, education, esr) %>% 
+  select(age, income_personal, cit, education, esr, race_simp) %>% 
   filter(age > 30,
          esr != "Not in Labor Force") %>% 
   mutate(income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
@@ -26,7 +27,13 @@ citizen_eda_30 <- data %>%
                                      income_personal <= 90000 ~ "60k-90k",
                                      income_personal <= 120000 ~ "90k-120k",
                                      income_personal <= 150000 ~ "120k-150k",
-                                     income_personal > 150000 ~ "150k+"))
+                                     income_personal > 150000 ~ "150k+")) %>% 
+  mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Non-Citizen",
+                                            "Citizen")))
 
 glimpse(citizen_eda_30)
 ```
@@ -34,12 +41,9 @@ glimpse(citizen_eda_30)
 
 ```{r}
 citizen_eda_30 %>% 
-  mutate(cit_simplified = ifelse(cit != "Not a U.S. citizen",
-                                 "U.S. Citizen",
-                                 "Not a U.S. Citizen")) %>% 
-  group_by(income_brackets, cit_simplified) %>%
+  group_by(income_brackets, cit_simp) %>%
   summarise(n = n(), .groups = "drop") %>%
-  group_by(cit_simplified) %>%
+  group_by(cit_simp) %>%
   mutate(prop = n / sum(n)) %>%
   mutate(income_brackets = factor(income_brackets, 
                                 levels = c("0-15k", "15k-30k", "30k-60k", 
@@ -47,15 +51,87 @@ citizen_eda_30 %>%
   ggplot() +
     geom_col(aes(x = income_brackets,
                  y = prop,
-                 fill = cit_simplified),
+                 fill = cit_simp),
              position = "dodge") +
     theme_few() +
-    labs(fill = "Citizenship",
+    labs(fill = "",
          title = "Citizenship Determines Likelihood of Income",
-         caption = "Source: ACS PUMS 2024 for LA County") +
+         caption = "Source: ACS PUMS 2024 for LA County",
+         subtitle = "79% chance of making less than 60k for non-citizens vs. 47% for citizens") +
     xlab("") +
     ylab("") +
-    theme(plot.title = element_text(hjust = 0.5)) +
+    theme(plot.title = element_text(hjust = 0.5),
+          plot.subtitle = element_text(hjust = 0.5),
+          legend.position = c(0.9, 0.86),
+          legend.background = element_rect(fill = "white", color = NA)) +
     scale_fill_manual(values = c("#377eb8", "#4daf4a"))
 ```
 
+```{r}
+citizen_eda_30 %>% 
+  group_by(income_brackets, cit_simp) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(cit_simp) %>%
+  mutate(prop = n / sum(n)) %>%
+  mutate(income_brackets = factor(income_brackets, 
+                                levels = c("0-15k", "15k-30k", "30k-60k", 
+                                           "60k-90k", "90k-120k", "120k-150k", "150k+"))) %>% 
+  group_by(cit_simp) %>% 
+  filter(income_brackets %in% c("0-15k", "15k-30k", "30k-60k")) %>% 
+  summarise(prob_less_60k = round(sum(prop), 2))
+```
+
+```{r}
+citizen_eda_30 %>% 
+  ggplot() +
+    geom_bar(aes(y = cit_simp,
+                 fill = race_simp),
+             position = "fill") +
+  scale_fill_manual(values = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00")) +
+  theme_few() +
+  ylab("") +
+  xlab("") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Race Is Disproportionately Spread Across Citizenship Status",
+       caption = "Source: ACS PUMS 2024 for LA County",
+       fill = "")
+```
+
+```{r}
+test <- chisq.test(table(citizen_eda_30$race_simp,
+                         citizen_eda_30$cit_simp))
+
+test
+```
+
+```{r}
+ggbarstats(
+  data = citizen_eda_30,
+  x = race_simp,
+  y = cit_simp
+) +
+  labs(caption = NULL) # remove caption
+```
+ 
+```{r}
+ggbarstats(
+  data = citizen_eda_30,
+  y = race_simp,
+  x = cit_simp
+) +
+  labs(caption = NULL) # remove caption
+```
+ 
+```{r}
+library(vcd)
+
+mosaic(~ race_simp + cit_simp,
+  direction = c("v", "h"),
+  data = citizen_eda_30,
+  shade = TRUE
+)
+```
+ 
+ 

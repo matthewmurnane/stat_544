@@ -18,7 +18,8 @@ glimpse(data[1:27])
 ```{r}
 education_eda_30 <- data %>% 
   filter(age >= 30,
-         esr != "Not in Labor Force") %>% 
+         esr != "Not in Labor Force"
+         ) %>% 
   select(age,
          race,
          race_simp,
