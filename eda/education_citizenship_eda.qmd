@@ -17,9 +17,9 @@ glimpse(data[1:27])
 ```
 
 ```{r}
-citizen_eda_30 <- data %>% 
+citizen_eda_18 <- data %>% 
   select(age, income_personal, cit, education, esr, race_simp) %>% 
-  filter(age > 30,
+  filter(age > 18,
          esr != "Not in Labor Force") %>% 
   mutate(income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
                                      income_personal <= 30000 ~ "15k-30k",
@@ -40,7 +40,7 @@ glimpse(citizen_eda_30)
 
 
 ```{r}
-citizen_eda_30 %>% 
+citizen_eda_18 %>% 
   group_by(income_brackets, cit_simp) %>%
   summarise(n = n(), .groups = "drop") %>%
   group_by(cit_simp) %>%
@@ -68,7 +68,7 @@ citizen_eda_30 %>%
 ```
 
 ```{r}
-citizen_eda_30 %>% 
+citizen_eda_18 %>% 
   group_by(income_brackets, cit_simp) %>%
   summarise(n = n(), .groups = "drop") %>%
   group_by(cit_simp) %>%
@@ -82,7 +82,7 @@ citizen_eda_30 %>%
 ```
 
 ```{r}
-citizen_eda_30 %>% 
+citizen_eda_18 %>% 
   mutate(race_simp = factor(race_simp,
                             levels = c("White", "Hispanic", "Asian", "Black", "Other")),
          education = factor(education,
@@ -124,15 +124,15 @@ citizen_eda_30 %>%
 ```
 
 ```{r}
-test <- chisq.test(table(citizen_eda_30$race_simp,
-                         citizen_eda_30$cit_simp))
+test <- chisq.test(table(citizen_eda_18$race_simp,
+                         citizen_eda_18$cit_simp))
 
 test
 ```
 
 ```{r}
 ggbarstats(
-  data = citizen_eda_30,
+  data = citizen_eda_18,
   x = race_simp,
   y = cit_simp
 ) +
@@ -141,7 +141,7 @@ ggbarstats(
  
 ```{r}
 ggbarstats(
-  data = citizen_eda_30,
+  data = citizen_eda_18,
   y = race_simp,
   x = cit_simp
 ) +
@@ -153,13 +153,13 @@ library(vcd)
 
 mosaic(~ race_simp + cit_simp,
   direction = c("v", "h"),
-  data = citizen_eda_30,
+  data = citizen_eda_18,
   shade = TRUE
 )
 ```
  
 ```{r}
-citizen_eda_30 %>% 
+citizen_eda_18 %>% 
   group_by(income_brackets, cit_simp, race_simp) %>%   # add race here
   summarise(n = n(), .groups = "drop") %>%
   group_by(cit_simp) %>%

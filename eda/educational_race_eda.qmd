@@ -16,8 +16,8 @@ glimpse(data[1:27])
 ```
 
 ```{r}
-education_eda_30 <- data %>% 
-  filter(age >= 30,
+education_eda_18 <- data %>% 
+  filter(age > 18,
          esr != "Not in Labor Force"
          ) %>% 
   select(age,
@@ -34,7 +34,7 @@ glimpse(education_eda_30)
 ```
 
 ```{r}
-education_eda_30 %>%
+education_eda_18 %>%
   filter(income_personal <= 500000) %>% 
   ggplot() +
     geom_boxplot(aes(x = income_personal / 1000,
@@ -49,7 +49,7 @@ education_eda_30 %>%
 ```
 
 ```{r}
-education_eda_30 %>% 
+education_eda_18 %>% 
   mutate(race_simp = factor(race_simp,
                             levels = c("White", "Hispanic", "Asian", "Black", "Other")),
          education = factor(education,
@@ -85,7 +85,7 @@ education_eda_30 %>%
 ```
 
 ```{r}
-education_eda_30 %>% 
+education_eda_18 %>% 
   mutate(race_simp = factor(race_simp,
                             levels = c("White", "Hispanic", "Asian", "Black", "Other")),
          education = factor(education,
