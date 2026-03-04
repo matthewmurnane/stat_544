@@ -83,10 +83,30 @@ citizen_eda_30 %>%
 
 ```{r}
 citizen_eda_30 %>% 
+  mutate(race_simp = factor(race_simp,
+                            levels = c("White", "Hispanic", "Asian", "Black", "Other")),
+         education = factor(education,
+                            levels = c("Post-bacc professional degree",
+                                       "Doctorate degree",
+                                       "Master's degree",
+                                       "Bachelor's degree",
+                                       "Associate's degree",
+                                       "Some college",
+                                       "Regular high school diploma",
+                                       "GED or alternative credential",
+                                       "Less than High School",
+                                       "No schooling completed"))) %>% 
+  mutate(income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
+                                     income_personal <= 30000 ~ "15k-30k",
+                                     income_personal <= 60000 ~ "30k-60k",
+                                     income_personal <= 90000 ~ "60k-90k",
+                                     income_personal <= 120000 ~ "90k-120k",
+                                     income_personal <= 150000 ~ "120k-150k",
+                                     income_personal > 150000 ~ "150k+")) %>% 
   ggplot() +
     geom_bar(aes(y = cit_simp,
                  fill = race_simp),
-             position = "fill") +
+             position = position_fill(reverse = TRUE)) +
   scale_fill_manual(values = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00")) +
   theme_few() +
   ylab("") +
@@ -132,6 +152,34 @@ mosaic(~ race_simp + cit_simp,
   data = citizen_eda_30,
   shade = TRUE
 )
+```
+ 
+```{r}
+citizen_eda_30 %>% 
+  group_by(income_brackets, cit_simp, race_simp) %>%   # add race here
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(cit_simp) %>%
+  mutate(prop = n / sum(n)) %>%
+  mutate(income_brackets = factor(income_brackets, 
+                                levels = c("0-15k", "15k-30k", "30k-60k", 
+                                           "60k-90k", "90k-120k", "120k-150k", "150k+"))) %>% 
+  ggplot() +
+    geom_col(aes(y = income_brackets,
+                 x = prop,
+                 fill = race_simp),            # fill is now race
+             position = "stack") +        # stack race within each bar
+    facet_wrap(~ cit_simp) +             # separate panels for citizen/non-citizen
+    theme_few() +
+    labs(fill = "",
+         title = "Citizenship Determines Likelihood of Income",
+         caption = "Source: ACS PUMS 2024 for LA County",
+         subtitle = "79% chance of making less than 60k for non-citizens vs. 47% for citizens") +
+    xlab("") +
+    ylab("") +
+    theme(plot.title = element_text(hjust = 0.5),
+          plot.subtitle = element_text(hjust = 0.5),
+          legend.position = "bottom") +
+    scale_fill_brewer(palette = "Set2")
 ```
  
  
