@@ -8,6 +8,7 @@ library(tidyverse)
 library(arrow)
 library(ggthemes)
 library(ggstatsplot)
+library(tigris)
 
 data <- read_parquet("../data/clean_data.parquet")
 ```
@@ -185,5 +186,88 @@ citizen_eda_18 %>%
           legend.position = "bottom") +
     scale_fill_brewer(palette = "Set2")
 ```
- 
- 
+
+```{r}
+puma_income_summary <- data %>%
+  select(puma, income_personal, cit) %>%
+  mutate(
+    cit_simplified = ifelse(
+      cit != "Not a U.S. citizen",
+      "U.S. Citizen",
+      "Not a U.S. Citizen"
+    )
+  ) %>%
+  group_by(puma, cit_simplified) %>%
+  summarise(
+    mean_income = mean(income_personal, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+puma_shapes <- pumas(state = "CA", year = 2020, cb = TRUE) %>%
+  mutate(puma = as.character(PUMACE20))
+
+puma_income_summary <- puma_income_summary %>%
+  mutate(puma = as.character(puma))
+
+map_income_data <- puma_shapes %>%
+  left_join(puma_income_summary, by = "puma")
+
+la_county <- counties(state = "CA", cb = TRUE) %>%
+  filter(NAME == "Los Angeles")
+
+la_income_map <- map_income_data %>%
+  st_filter(la_county)
+```
+
+
+```{r}
+la_citizens <- la_income_map %>%
+  filter(cit_simplified == "U.S. Citizen")
+
+ggplot(la_citizens) +
+  geom_sf(aes(fill = mean_income),
+          color = "white",
+          size = 0.15) +
+  scale_fill_viridis_c(
+    name = "Average Income ($)",
+    option = "magma",
+    direction = -1,
+    labels = scales::dollar_format()
+  ) +
+  labs(
+    title = "Average Personal Income by PUMA",
+    subtitle = "U.S. Citizens — Los Angeles County",
+    caption = "Source: ACS PUMS 2024"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+```
+
+```{r}
+la_non_citizens <- la_income_map %>%
+  filter(cit_simplified == "Not a U.S. Citizen")
+
+ggplot(la_non_citizens) +
+  geom_sf(aes(fill = mean_income),
+          color = "white",
+          size = 0.15) +
+  scale_fill_viridis_c(
+    name = "Average Income ($)",
+    option = "magma",
+    direction = -1,
+    labels = scales::dollar_format()
+  ) +
+  labs(
+    title = "Average Personal Income by PUMA",
+    subtitle = "Non–U.S. Citizens — Los Angeles County",
+    caption = "Source: ACS PUMS 2024"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5)
+  )
+```
