@@ -107,7 +107,11 @@ citizen_eda_30 %>%
     geom_bar(aes(y = cit_simp,
                  fill = race_simp),
              position = position_fill(reverse = TRUE)) +
-  scale_fill_manual(values = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00")) +
+  scale_fill_manual(values = c("Asian" = "#e41a1c",
+                               "White" = "#377eb8",
+                               "Hispanic" = "#4daf4a",
+                               "Black" = "#984ea3", 
+                               "Other" = "#ff7f00")) +
   theme_few() +
   ylab("") +
   xlab("") +
