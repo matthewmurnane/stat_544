@@ -7,7 +7,7 @@ format: pdf
 library(tidyverse)
 library(arrow)
 library(ggthemes)
-library(ggstatsplot)
+#library(ggstatsplot)
 
 data <- read_parquet("../data/clean_data.parquet")
 ```
