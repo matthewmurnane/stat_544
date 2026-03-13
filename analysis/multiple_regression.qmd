@@ -3,7 +3,78 @@ title: "Untitled"
 format: pdf
 ---
 
-```{r}
+```{r echo=FALSE}
+library(arrow)
+library(ggthemes)
+library(tidyverse)
+library(survey)
+library(srvyr)
+library(broom)
+library(gt)
+library(prettyunits)
+library(polycor)
+library(ggcorrplot)
+```
 
+```{r}
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r}
+data_selected <- data %>% 
+  mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Non-Citizen",
+                                            "Citizen"))) %>% 
+  select(income_personal, age, race_simp, cit_simp, gross_rent, education, health_insurance,
+          snap_benefits, jwtrns, puma, pwgtp, pwgtp1:pwgtp80)
+
+rep_weights <- paste0("pwgtp", 1:80)
+
+acs_design <- data_selected %>%
+  as_survey_rep(
+    weights    = pwgtp,
+    repweights = all_of(rep_weights),
+    type       = "successive-difference",
+    mse        = TRUE
+  )
+```
+
+```{r}
+acs_model <- acs_design %>%
+  svyglm(formula = income_personal ~ age + race_simp + cit_simp + education,
+         design = .)
+
+tidy(acs_model) %>% 
+  mutate(p.value = pretty_p_value(p.value)) %>%
+  gt() %>%
+  fmt_number()
+```
+```{r}
+data_selected %>%
+  select(income_personal, age, race_simp, cit_simp, gross_rent,
+         education, health_insurance, snap_benefits, jwtrns) %>%
+  mutate(
+    income_personal = as.numeric(income_personal),
+    age              = as.numeric(age),
+    gross_rent       = as.numeric(gross_rent),
+    race_simp        = as.factor(race_simp),
+    cit_simp         = as.factor(cit_simp),
+    education        = as.factor(education),
+    health_insurance = as.factor(health_insurance),
+    snap_benefits    = as.factor(snap_benefits),
+    jwtrns           = as.factor(jwtrns)
+  ) %>%
+  as.data.frame() %>%   # hetcor() can behave unexpectedly with tibbles
+  hetcor() %>%
+  .$correlations %>%
+  ggcorrplot(
+    method = "circle",
+    type   = "lower",
+    lab    = TRUE,
+    title  = "Heterogeneous Correlation Matrix"
+  )
 ```
 
