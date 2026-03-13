@@ -4,6 +4,143 @@ format: pdf
 ---
 
 ```{r}
+library(tidyverse)
+library(arrow)
+library(ggplot2)
+library(survey)
+```
+
+
+```{r}
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r}
+glimpse(data)
+```
+
+```{r}
+income_by_education <- data %>%
+  filter(
+    education %in% c("Regular high school diploma", "Bachelor's degree"),
+    race != "American Native" & race != "Native Alaskan", race != "Native Hawaiin or Pacific Islander"
+  ) %>%
+  select(
+    education,
+    income_personal,
+    race,
+    pwgtp,
+    pwgtp1,
+    wgtp
+  )
+```
+
+```{r}
+glimpse(income_by_education)
+```
+
+```{r}
+totals <- income_by_education %>%
+  group_by(race) %>%
+  summarise(total = n())
+print(totals)
+```
+
+
+```{r}
+point_estimates <- income_by_education %>%
+  group_by(education, race) %>%
+  summarise(
+    n = n(),
+    mean_income = mean(income_personal, na.rm = TRUE),
+    sd = sd(income_personal, na.rm = TRUE),
+    n = n(),
+    se = sd / sqrt(n)
+  )
+
+print(point_estimates)
+```
+
+
+```{r}
+confidence_intervals <- point_estimates %>%
+    group_by(education, race) %>%
+  summarise(
+    lower_CI = mean_income - 1.96 * se,
+    upper_CI = mean_income + 1.96 * se
+)
+print(confidence_intervals)
+```
+
+```{r}
+ggplot(point_estimates, aes(x = education, y = mean_income, fill = race)) +
+  geom_bar(stat = "identity", position = "dodge") +
+   geom_text(aes(label = n), position = position_dodge(width = 0.9), vjust = -0.3)
+```
+```{r}
+anova1 <- aov(income_personal ~ education + race, data = income_by_education)
+summary(anova1)
+```
+```{r}
+anova2 <- aov(income_personal ~ education * race, data = income_by_education)
+summary(anova2)
+```
+
+
+```{r}
+income_by_education$race <- factor(income_by_education$race)
+income_by_education$education <- factor(income_by_education$education)
+income_by_education$race <- relevel(income_by_education$race, ref = "White")
+income_by_education$education <- relevel(income_by_education$education, ref = "Bachelor's degree")
+model <- lm(income_personal ~ education + race, data = income_by_education)
+summary(model)
+```
+```{r}
+point_estimates <- income_by_education %>%
+  group_by(education, race) %>%
+  summarise(
+    n = n(),
+    weighted_mean_income = weighted.mean(income_personal, wgtp, na.rm = TRUE),
+    sd = sd(income_personal, na.rm = TRUE),
+    n = n(),
+    se = sd / sqrt(n)
+  )
+
+print(point_estimates)
+```
+```{r}
+model <- lm(income_personal ~ education + race,
+            data = income_by_education,
+            weights = wgtp)
+
+summary(model)
+```
+
+```{r}
+anova_model <- aov(income_personal ~ education * race,
+                   data = income_by_education,
+                   weights = wgtp)
+
+summary(anova_model)
+```
+
+
+```{r}
+repweights <- income_by_education[, paste0("pwgtp", 1:80)]
+
+design <- svrepdesign(
+  weights = ~pwgtp,
+  repweights = repweights,
+  type = "successive-difference",
+  data = income_by_education
+)
+```
+
+```{r}
+svymean(~income_personal, design)
+```
+
+```{r}
 
 ```
 
