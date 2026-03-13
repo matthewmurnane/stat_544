@@ -1,9 +1,168 @@
 ---
-title: "Untitled"
+title: "multinomial classification"
 format: pdf
 ---
 
 ```{r}
+library(tidyverse)
+library(arrow)
+library(caret)
+library(xgboost)
+library(rpart)
+library(rpart.plot)
+library(dplyr)
+library(smotefamily)
+
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+### Decision Tree (ALL)
+
+```{r}
+set.seed(0)
+
+sample<- createDataPartition(data$race_simp, p=0.8, list=FALSE)
+train<- data[sample,]
+test<- data[-sample,]
+
+tree<- rpart(race_simp ~ gross_rent + jwtrns + povpip + education + hupac + income_household + wkhp + esr + snap_benefits + health_insurance + cit, data=train, method="class", parms=list(split="Gini"), maxdepth=30)
 
 ```
 
+```{r}
+rpart.plot(tree, type=5)
+
+pred.values<- predict(tree, test)
+pred.values
+
+test<- cbind(test, pred.values)
+test$maxprob<- pmax(test$'Asian',test$'Black',test$'Hispanic',test$'Other',test$'White')
+
+test$predclass<- ifelse(test$maxprob==test$'Asian', 'Asian',
+  ifelse(test$maxprob==test$'Black','Black',
+         ifelse(test$maxprob==test$'Hispanic','Hispanic',
+                ifelse(test$maxprob==test$'Other','Other','White'))))
+
+conf.mat <- table(Predicted=test$predclass, Actual=test$race_simp)
+
+print(conf.mat)
+```
+
+### Decision Tree (Filtered based on citizen over 30)
+
+```{r}
+citizen_eda_30 <- data %>% 
+  select(age, gross_rent, jwtrns, povpip, education, hupac, income_household, wkhp, esr, snap_benefits, health_insurance, cit, race_simp) %>% 
+  filter(age > 30,
+         esr != "Not in Labor Force")
+  
+set.seed(0)
+
+sample<- createDataPartition(citizen_eda_30$race_simp, p=0.8, list=FALSE)
+train<- citizen_eda_30[sample,]
+test<- citizen_eda_30[-sample,]
+
+x <- train %>% 
+  select(-race_simp)
+
+y <- train$race_simp
+
+x <- model.matrix(~ . -1, data = x)
+
+smote_data <- SMOTE(x, y, K = 5, dup_size = 0)
+
+```
+
+```{r}
+prop.table(table(train$race_simp))
+prop.table(table(test$race_simp))
+```
+
+```{r}
+tree<- rpart(race_simp ~ gross_rent + jwtrns + povpip + education + hupac + income_household + wkhp + esr + snap_benefits + health_insurance + cit, data=train, method="class", parms=list(split="Entropy"), maxdepth=30)
+```
+
+```{r}
+rpart.plot(tree, type=5)
+
+pred.values<- predict(tree, test)
+pred.values
+
+test<- cbind(test, pred.values)
+test$maxprob<- pmax(test$'Asian',test$'Black',test$'Hispanic',test$'Other',test$'White')
+
+test$predclass<- ifelse(test$maxprob==test$'Asian', 'Asian',
+  ifelse(test$maxprob==test$'Black','Black',
+         ifelse(test$maxprob==test$'Hispanic','Hispanic',
+                ifelse(test$maxprob==test$'Other','Other','White'))))
+
+conf.mat <- table(Predicted=test$predclass, Actual=test$race_simp)
+
+print(conf.mat)
+```
+
+### Boosting
+
+```{r}
+citizen_eda_30$target <- ifelse(citizen_eda_30$race_simp=="Asian", 0,
+  ifelse(citizen_eda_30$race_simp=="Black", 1,
+         ifelse(citizen_eda_30$race_simp=="Hispanic", 2,
+                ifelse(citizen_eda_30$race_simp=="Other", 3, 4))))
+
+citizen_eda_30 <- subset(citizen_eda_30, select=-race_simp)
+
+set.seed(0)
+
+sample<- createDataPartition(citizen_eda_30$target, p=0.8, list=FALSE)
+train <- citizen_eda_30[sample, ]
+test  <- citizen_eda_30[-sample, ]
+
+train.x <- data.matrix(train[c('gross_rent', 'jwtrns', 'povpip', 'education', 'hupac', 'income_household', 'wkhp', 'esr', 'snap_benefits','health_insurance','cit')])
+train.y <- train$target
+test.x  <- data.matrix(test[c('gross_rent', 'jwtrns', 'povpip', 'education', 'hupac', 'income_household', 'wkhp', 'esr', 'snap_benefits','health_insurance','cit')])
+test.y  <- test$target        
+```
+
+```{r}
+dtrain <- xgb.DMatrix(data = train.x, label = train.y)
+
+xgb.mclass<- xgb.train(data=dtrain, params=list(num_class=5,
+max_depth=6, eta=0.1, objective="multi:softprob"), nrounds=1000)
+
+pred.prob <- predict(xgb.mclass, test.x)
+pred.class <- max.col(pred.prob) - 1
+
+test$predclass<- ifelse(pred.class==0, 'Asian',
+  ifelse(pred.class==1,'Black',
+         ifelse(pred.class==2,'Hispanic',
+                ifelse(pred.class==3,'Other','White'))))
+
+test$race_simp<- ifelse(pred.class==0, 'Asian',
+  ifelse(pred.class==1,'Black',
+         ifelse(pred.class==2,'Hispanic',
+                ifelse(pred.class==3,'Other','White'))))
+
+conf.mat <- table(Predicted=test$predclass, Actual=test$race_simp)
+
+print(conf.mat)
+```
+
+```{r}
+pred.prob <- predict(xgb.mclass, train.x)
+pred.class <- max.col(pred.prob) - 1
+
+train$predclass<- ifelse(pred.class==0, 'Asian',
+  ifelse(pred.class==1,'Black',
+         ifelse(pred.class==2,'Hispanic',
+                ifelse(pred.class==3,'Other','White'))))
+
+train$race_simp<- ifelse(pred.class==0, 'Asian',
+  ifelse(pred.class==1,'Black',
+         ifelse(pred.class==2,'Hispanic',
+                ifelse(pred.class==3,'Other','White'))))
+
+conf.mat <- table(Predicted=train$predclass, Actual=train$race_simp)
+
+print(conf.mat)
+```
