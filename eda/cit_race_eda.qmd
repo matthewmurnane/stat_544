@@ -1,0 +1,49 @@
+---
+title: "income_citizenship_eda"
+format: pdf
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(ggthemes)
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r}
+cit_race_eda_30 <- data %>% 
+  filter(age >= 30,
+         esr != "Not in Labor Force"
+         ) %>% 
+  select(race_simp,
+         income_personal,
+         education,
+         puma,
+         cit) %>% 
+  mutate(income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
+                                     income_personal <= 30000 ~ "15k-30k",
+                                     income_personal <= 60000 ~ "30k-60k",
+                                     income_personal <= 90000 ~ "60k-90k",
+                                     income_personal <= 120000 ~ "90k-120k",
+                                     income_personal <= 150000 ~ "120k-150k",
+                                     income_personal > 150000 ~ "150k+")) %>% 
+  mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Non-Citizen",
+                                      "Citizen")))
+
+
+glimpse(cit_race_eda_30)
+```
+
+```{r}
+cit_race_eda_30 %>% 
+  ggplot() +
+    geom_col(aes(x = income_brackets,
+                 fill = "cit_simp"),
+             position = "dodge")
+```
+

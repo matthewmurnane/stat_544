@@ -7,12 +7,12 @@ format: pdf
 library(tidyverse)
 library(arrow)
 library(ggthemes)
-<<<<<<< HEAD
+
 #library(ggstatsplot)
-=======
+
 library(ggstatsplot)
 library(tigris)
->>>>>>> 8fac1b333fe88c8ba1d6c6ee49566f8521544e8a
+
 
 data <- read_parquet("../data/clean_data.parquet")
 ```

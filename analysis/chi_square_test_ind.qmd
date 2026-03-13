@@ -4,6 +4,124 @@ format: pdf
 ---
 
 ```{r}
+############################
+# 0) Libraries + Load Data
+############################
+library(tidyverse)
+library(arrow)
+
+# Additional packages used below:
+# install.packages(c("rcompanion", "MASS", "glmnet"))  # if needed
+library(rcompanion)  # pairwise nominal independence tests
+library(MASS)        # stepAIC
+library(glmnet)      # lasso
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r}
+############################
+# 1) Setup Variables
+############################
+
+# Restrict to adults 
+data <- data %>% filter(age >= 18)
+
+# Make variables into apropriate data type
+data <- data %>%
+  mutate(
+    education = factor(education),
+    race_simp = factor(race_simp),
+    cit = factor(cit),
+    snap_benefits = factor(snap_benefits),
+    health_insurance = factor(health_insurance),
+    dis = factor(dis),
+    esr = factor(esr),
+    income_personal = as.numeric(income_personal),
+    wkhp = as.numeric(wkhp)   # should already be numeric, but safe
+  ) %>%
+  filter(!is.na(income_personal))
+
+```
+
+```{r}
+# Break up income as categories (quartiles)
+data <- data %>%
+  mutate(
+    income_cat = cut(
+      income_personal,
+      breaks = quantile(income_personal, probs = seq(0, 1, 0.25), na.rm = TRUE),
+      include.lowest = TRUE
+    )
+  )
+```
+
+```{r}
+#Chi Square Tests
+
+# 2A) Education x Race
+chi_edu_race <- chisq.test(table(data$education, data$race_simp))
+chi_edu_race
+
+# 2B) Citizenship x Race
+chi_cit_race <- chisq.test(table(data$cit, data$race_simp))
+chi_cit_race
+
+# 2C) Income Category x Race
+chi_inc_race <- chisq.test(table(data$income_cat, data$race_simp))
+chi_inc_race
+
+# 2D) Education x Citizenship
+chi_edu_cit <- chisq.test(table(data$education, data$cit))
+chi_edu_cit
+```
+
+```{r}
+#Bonferonni Function
+
+############################################################
+# Interpretation:
+#   std_resid > 0  => observed count is higher than expected under independence
+#   std_resid < 0  => observed count is lower than expected
+#   |std_resid| > crit => "significant" cell after Bonferroni correction
+############################################################
+
+bonferroni_cells <- function(tab, alpha = 0.05) {
+  chi <- suppressWarnings(chisq.test(tab))   # suppresses the approximation warning if it appears
+  std_resid <- chi$stdres
+  
+  m <- length(std_resid)                    # number of cells tested
+  crit <- qnorm(1 - alpha / (2 * m))        # two-sided Bonferroni critical value
+  
+  sig_idx <- which(abs(std_resid) > crit, arr.ind = TRUE)
+  
+  out <- list(
+    chisq = chi,
+    crit = crit,
+    std_resid = std_resid,
+    significant_cells = if (nrow(sig_idx) == 0) {
+      tibble()
+    } else {
+      tibble(
+        row_level = rownames(std_resid)[sig_idx[, 1]],
+        col_level = colnames(std_resid)[sig_idx[, 2]],
+        std_resid = std_resid[sig_idx]
+      ) %>% arrange(desc(abs(std_resid)))
+    }
+  )
+  return(out)
+}
+```
+
+```{r}
+#Bonferonni Tests
+
+#Education x Race
+tab_edu_race <- table(data$education, data$race_simp)
+bonf_edu_race <- bonferroni_cells(tab_edu_race, alpha = 0.05)
+
+bonf_edu_race$crit
+bonf_edu_race$significant_cells
 
 ```
 
