@@ -1,0 +1,45 @@
+---
+title: "rent_income"
+format: pdf
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(ggthemes)
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r}
+glimpse(data)
+```
+
+
+```{r}
+citizen_eda_30 <- data %>% 
+  select(age, income_personal, cit, education, esr, race_simp, gross_rent, grpip) %>% 
+  filter(age > 30,
+         esr != "Not in Labor Force") %>% 
+  mutate(income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
+                                     income_personal <= 30000 ~ "15k-30k",
+                                     income_personal <= 60000 ~ "30k-60k",
+                                     income_personal <= 90000 ~ "60k-90k",
+                                     income_personal <= 120000 ~ "90k-120k",
+                                     income_personal <= 150000 ~ "120k-150k",
+                                     income_personal > 150000 ~ "150k+"))
+```
+
+```{r}
+citizen_eda_30 %>% 
+  ggplot() +
+    geom_boxplot(aes(y = reorder(income_brackets, income_personal),
+                     x = grpip))
+```
+```{r}
+citizen_eda_30 %>% 
+  ggplot() +
+    geom_boxplot(aes(y = reorder(income_brackets, income_personal),
+                     x = gross_rent))
+```
+

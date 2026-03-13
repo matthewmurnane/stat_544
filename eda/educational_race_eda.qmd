@@ -16,8 +16,8 @@ glimpse(data[1:27])
 ```
 
 ```{r}
-education_eda_30 <- data %>% 
-  filter(age >= 30,
+education_eda_18 <- data %>% 
+  filter(age > 18,
          esr != "Not in Labor Force"
          ) %>% 
   select(age,
@@ -34,7 +34,7 @@ glimpse(education_eda_30)
 ```
 
 ```{r}
-education_eda_30 %>%
+education_eda_18 %>%
   filter(income_personal <= 500000) %>% 
   ggplot() +
     geom_boxplot(aes(x = income_personal / 1000,
@@ -49,12 +49,30 @@ education_eda_30 %>%
 ```
 
 ```{r}
-education_eda_30 %>% 
+education_eda_18 %>% 
+  mutate(race_simp = factor(race_simp,
+                            levels = c("White", "Hispanic", "Asian", "Black", "Other")),
+         education = factor(education,
+                            levels = c("Post-bacc professional degree",
+                                       "Doctorate degree",
+                                       "Master's degree",
+                                       "Bachelor's degree",
+                                       "Associate's degree",
+                                       "Some college",
+                                       "Regular high school diploma",
+                                       "GED or alternative credential",
+                                       "Less than High School",
+                                       "No schooling completed"))) %>% 
   ggplot() +
-    geom_bar(aes(y = reorder(education, income_personal, mean),
+    geom_bar(aes(y = education,
                  fill = race_simp),
-             position = "fill") +
-  scale_fill_manual(values = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00")) +
+             position = position_fill(reverse = TRUE)) +
+  scale_fill_manual(values = c("Asian" = "#e41a1c",
+                               "White" = "#377eb8",
+                               "Hispanic" = "#4daf4a",
+                               "Black" = "#984ea3", 
+                               "Other" = "#ff7f00")) +
+  scale_y_discrete(limits = rev) + 
   theme_few() +
   xlab("")+
   ylab("") +
@@ -67,7 +85,20 @@ education_eda_30 %>%
 ```
 
 ```{r}
-education_eda_30 %>% 
+education_eda_18 %>% 
+  mutate(race_simp = factor(race_simp,
+                            levels = c("White", "Hispanic", "Asian", "Black", "Other")),
+         education = factor(education,
+                            levels = c("Post-bacc professional degree",
+                                       "Doctorate degree",
+                                       "Master's degree",
+                                       "Bachelor's degree",
+                                       "Associate's degree",
+                                       "Some college",
+                                       "Regular high school diploma",
+                                       "GED or alternative credential",
+                                       "Less than High School",
+                                       "No schooling completed"))) %>% 
   mutate(income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
                                      income_personal <= 30000 ~ "15k-30k",
                                      income_personal <= 60000 ~ "30k-60k",
@@ -79,8 +110,12 @@ education_eda_30 %>%
   ggplot() +
     geom_bar(aes(y = reorder(income_brackets,income_personal),
                  fill = race_simp),
-             position = "fill") +
-    scale_fill_manual(values = c("#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00")) +
+             position = position_fill(reverse = TRUE)) +
+    scale_fill_manual(values = c("Asian" = "#e41a1c",
+                               "White" = "#377eb8",
+                               "Hispanic" = "#4daf4a",
+                               "Black" = "#984ea3", 
+                               "Other" = "#ff7f00")) +
     theme_few() +
     theme(axis.text.x = element_blank(),
          axis.ticks.x = element_blank()) +
