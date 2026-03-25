@@ -58,6 +58,8 @@ sample_size_table <- acs_design %>%
   tab_spanner(label = "Race",
               columns = everything())
 
+sample_size_table
+
 gtsave(sample_size_table,
        "../../../midterm_presentation/sample_size_table.png",
        zoom = 3)
