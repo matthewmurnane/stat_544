@@ -1,0 +1,190 @@
+---
+title: "eda"
+format: pdf
+---
+
+```{r}
+library(tidyverse)
+library(arrow)
+library(ggthemes)
+
+data <- read_parquet("../data/clean_data.parquet")
+
+
+df <- data %>% 
+  filter(age >= 18,
+         esr != "Not in Labor Force"
+         ) %>% 
+  select(race_simp,
+         income_personal,
+         education,
+         cit) %>% 
+  mutate(income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
+                                     income_personal <= 30000 ~ "15k-30k",
+                                     income_personal <= 60000 ~ "30k-60k",
+                                     income_personal <= 90000 ~ "60k-90k",
+                                     income_personal <= 120000 ~ "90k-120k",
+                                     income_personal <= 150000 ~ "120k-150k",
+                                     income_personal > 150000 ~ "150k+"),
+         cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Non-Citizen",
+                                      "Citizen")))
+```
+
+```{r}
+df %>%
+  filter(!is.na(cit_simp), !is.na(income_brackets)) %>%
+  group_by(income_brackets, cit_simp) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(cit_simp) %>%
+  mutate(prop = n / sum(n),
+         income_brackets = factor(income_brackets,
+                                  levels = c("0-15k", "15k-30k", "30k-60k",
+                                             "60k-90k", "90k-120k", "120k-150k",
+                                             "150k+"))) %>%
+  ggplot(aes(x = income_brackets, y = prop, fill = cit_simp)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = c("Citizen" = "#377eb8", "Non-Citizen" = "#e41a1c")) +
+  labs(
+    title = "Non-Citizens Make Less Money Than Citizens",
+    x     = "",
+    y     = "",
+    fill  = ""
+  ) +
+  theme_few()
+```
+
+```{r}
+# Build combined dataframe with a category label
+combined_freq <- bind_rows(
+  df %>%
+    filter(!is.na(race_simp)) %>%
+    group_by(label = race_simp) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    mutate(prop = round(n / sum(n) * 100, 1),
+           group = "Race"),
+  
+  data %>%
+    filter(!is.na(education)) %>%
+    group_by(label = as.character(education)) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    mutate(prop = round(n / sum(n) * 100, 1),
+           label = factor(label,
+                          levels = c("Post-bacc professional degree",
+                                     "Doctorate degree",
+                                     "Master's degree",
+                                     "Bachelor's degree",
+                                     "Associate's degree",
+                                     "Some college",
+                                     "Regular high school diploma",
+                                     "GED or alternative credential",
+                                     "Less than High School",
+                                     "No schooling completed")),
+           group = "Education") %>%
+    arrange(label) %>%
+    mutate(label = as.character(label)),
+  
+  data %>%
+    filter(!is.na(cit_simp)) %>%
+    group_by(label = as.character(cit_simp)) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    mutate(prop = round(n / sum(n) * 100, 1),
+           group = "Citizenship"),
+  
+  data %>%
+    filter(!is.na(income_brackets)) %>%
+    group_by(label = income_brackets) %>%
+    summarise(n = n(), .groups = "drop") %>%
+    mutate(prop = round(n / sum(n) * 100, 1),
+           label = factor(label,
+                          levels = c("0-15k", "15k-30k", "30k-60k",
+                                     "60k-90k", "90k-120k", "120k-150k",
+                                     "150k+")),
+           group = "Income Bracket") %>%
+    arrange(label) %>%
+    mutate(label = as.character(label))
+)
+
+combined_freq_table <- combined_freq %>%
+  dplyr::select(group, label, n, prop) %>%
+  gt(rowname_col = "label", groupname_col = "group") %>%
+  tab_header(title = "Table S1: Variable Frequencies") %>%
+  tab_stubhead(label = "Category") %>%
+  cols_label(
+    n    = "n",
+    prop = "%"
+  ) %>%
+  fmt_number(columns = n, decimals = 0) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_row_groups()
+  ) %>%
+  tab_source_note(paste0("Total n = ", scales::comma(nrow(data))))
+
+combined_freq_table
+
+gtsave(combined_freq_table, "../../statistical_report/table_s1_variable_frequencies.png")
+```
+
+```{r}
+showing_data <- data %>% 
+  mutate(income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
+                                     income_personal <= 30000 ~ "15k-30k",
+                                     income_personal <= 60000 ~ "30k-60k",
+                                     income_personal <= 90000 ~ "60k-90k",
+                                     income_personal <= 120000 ~ "90k-120k",
+                                     income_personal <= 150000 ~ "120k-150k",
+                                     income_personal > 150000 ~ "150k+"),
+         cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Non-Citizen",
+                                      "Citizen"))) %>% 
+  filter(age >= 18,
+         esr != "Not in Labor Force") %>% 
+  select(age, income_personal, income_brackets, race_simp, education, cit_simp)
+
+
+glimpse(showing_data)
+```
+
+```{r}
+showing_table <- showing_data %>%
+  slice_sample(n = 5) %>%
+  gt() %>%
+  cols_label(
+    income_personal  = "Income ($)",
+    income_brackets  = "Income Bracket",
+    race_simp        = "Race",
+    education        = "Education",
+    cit_simp         = "Citizenship"
+  ) %>%
+  fmt_number(
+    columns  = income_personal,
+    decimals = 0
+  ) %>%
+  tab_header(
+    title    = "Table 1: Sample of Analysis Data",
+  ) %>%
+  tab_source_note(
+    source_note = "Total dataset: 52,136 observations. Filtered to ages 18+ in the labor force."
+  ) %>%
+  tab_style(
+    style     = cell_text(weight = "bold"),
+    locations = cells_column_labels()
+  ) %>%
+  tab_style(
+    style     = cell_fill(color = "#f5f5f5"),
+    locations = cells_body(rows = seq(1, 5, by = 2))
+  )
+```
+
+```{r}
+gtsave(showing_table, "../../statistical_report/sample_data.png")
+```
+

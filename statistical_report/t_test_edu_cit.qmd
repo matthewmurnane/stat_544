@@ -1,0 +1,145 @@
+---
+title: "t_tests_race_cit_edu"
+format: pdf
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(arrow)
+library(purrr)
+library(survey)
+library(srvyr)
+library(broom)
+library(gt)
+
+data <- read_parquet("../data/clean_data.parquet")
+
+glimpse(data)
+```
+
+```{r}
+# Fix t_data to include cit_simp
+t_data <- data %>% 
+  dplyr::filter(age > 18,
+         esr != "Not in Labor Force") %>% 
+  mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Citizen", "Non-Citizen")),
+         education = factor(education,
+                            levels = c("Post-bacc professional degree",
+                                       "Doctorate degree",
+                                       "Master's degree",
+                                       "Bachelor's degree",
+                                       "Associate's degree",
+                                       "Some college",
+                                       "Regular high school diploma",
+                                       "GED or alternative credential",
+                                       "Less than High School",
+                                       "No schooling completed"))) %>% 
+  select(income_personal, education, race_simp, cit_simp, pwgtp, pwgtp1:pwgtp80)
+
+# Rebuild design with cit_simp included
+t_design <- t_data %>%
+  as_survey_rep(
+    weights    = pwgtp,
+    repweights = all_of(rep_weights),
+    type       = "successive-difference",
+    mse        = TRUE
+  )
+
+races <- acs_design %>% 
+  pull(race_simp) %>% 
+  unique() %>% 
+  na.omit()
+
+```
+
+```{r}
+# Bachelor's vs High School across race
+bach_hs_results <- map(races, ~ {
+  t_design %>%
+    filter(
+      race_simp == .x,
+      education %in% c("Regular high school diploma", "Bachelor's degree")
+    ) %>%
+    mutate(education = droplevels(as.factor(education)),
+           education = relevel(education, ref = "Regular high school diploma")) %>%
+    svyttest(income_personal ~ education, design = ., na.rm = TRUE)
+}) %>%
+  set_names(races)
+
+bach_hs_table <- map_dfr(bach_hs_results, tidy, .id = "race") %>%
+  arrange(desc(estimate)) %>%
+  mutate(comparison = paste0(race, ": bach - hs")) %>%
+  dplyr::select(comparison, estimate, p.value) %>%
+  gt() %>%
+  cols_label(
+    comparison = "Comparison",
+    estimate   = "Estimate ($)",
+    p.value    = "P-Value"
+  ) %>%
+  fmt_number(columns = estimate, decimals = 0) %>%
+  fmt(columns = p.value,
+      fns = ~ ifelse(. < 0.001, "< .001", round(., 3)))
+
+# Citizen vs Non-Citizen across race
+cit_results <- map(races, ~ {
+  t_design %>%
+    filter(race_simp == .x) %>%
+    mutate(cit_simp = droplevels(as.factor(cit_simp)),
+           cit_simp = relevel(cit_simp, ref = "Non-Citizen")) %>%
+    svyttest(income_personal ~ cit_simp, design = ., na.rm = TRUE)
+}) %>%
+  set_names(races)
+
+cit_table <- map_dfr(cit_results, tidy, .id = "race") %>%
+  arrange(desc(estimate)) %>%
+  mutate(comparison = paste0(race, ": citizen - non-citizen")) %>%
+  dplyr::select(comparison, estimate, p.value) %>%
+  gt() %>%
+  cols_label(
+    comparison = "Comparison",
+    estimate   = "Estimate ($)",
+    p.value    = "P-Value"
+  ) %>%
+  fmt_number(columns = estimate, decimals = 0) %>%
+  fmt(columns = p.value,
+      fns = ~ ifelse(. < 0.001, "< .001", round(., 3)))
+
+bach_hs_table
+cit_table
+```
+
+```{r}
+# Sample size table for Bachelor's vs High School
+bach_hs_sample <- t_design %>%
+  filter(education %in% c("Regular high school diploma", "Bachelor's degree"),
+         !is.na(income_personal)) %>%
+  group_by(race_simp, education) %>%
+  summarise(sample_size = n(), .groups = "drop") %>%
+  arrange(education, race_simp) %>%
+  pivot_wider(names_from = "race_simp", values_from = "sample_size") %>%
+  dplyr::select(education, Hispanic, White, Black, Asian, Other) %>%
+  gt(rowname_col = "education") %>%
+  tab_stubhead(label = "Education") %>%
+  tab_spanner(label = "Race", columns = everything())
+
+bach_hs_sample
+
+# Sample size table for Citizen vs Non-Citizen
+cit_sample <- t_design %>%
+  filter(!is.na(income_personal)) %>% 
+  group_by(race_simp, cit_simp) %>%
+  summarise(sample_size = n(), .groups = "drop") %>%
+  arrange(cit_simp, race_simp) %>%
+  pivot_wider(names_from = "race_simp", values_from = "sample_size") %>%
+  dplyr::select(cit_simp, Hispanic, White, Black, Asian, Other) %>%
+  gt(rowname_col = "cit_simp") %>%
+  tab_stubhead(label = "Citizenship") %>%
+  tab_spanner(label = "Race", columns = everything())
+
+cit_sample
+```
+

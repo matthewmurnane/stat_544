@@ -1,0 +1,83 @@
+---
+title: "pair_wise_t_tests_education"
+format: pdf
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(arrow)
+library(purrr)
+library(survey)
+library(srvyr)
+library(broom)
+library(gt)
+
+data <- read_parquet("../data/clean_data.parquet")
+
+glimpse(data)
+```
+
+```{r}
+pair_t <- data %>% 
+  dplyr::filter(age > 18,
+         esr != "Not in Labor Force") %>% 
+  mutate(education = factor(education,
+                            levels = c("Post-bacc professional degree",
+                                       "Doctorate degree",
+                                       "Master's degree",
+                                       "Bachelor's degree",
+                                       "Associate's degree",
+                                       "Some college",
+                                       "Regular high school diploma",
+                                       "GED or alternative credential",
+                                       "Less than High School",
+                                       "No schooling completed"))) %>% 
+  select(income_personal, education, pwgtp, pwgtp1:pwgtp80)
+
+pair_t_design <- pair_t %>%
+  as_survey_rep(
+    weights    = pwgtp,
+    repweights = all_of(rep_weights),
+    type       = "successive-difference",
+    mse        = TRUE
+)
+```
+
+```{r}
+# Get unique education levels (drop NAs)
+edu_levels <- pair_t_design$variables$education |>
+  unique() |>
+  na.omit()
+
+# Generate all pairwise combinations
+pairs <- combn(edu_levels, 2, simplify = FALSE)
+
+# Run svyttest for each pair
+results <- map_dfr(pairs, function(pair) {
+  sub_design <- subset(pair_t_design, education %in% pair)
+  
+  test <- svyttest(income_personal ~ education, design = sub_design)
+  
+  tibble(
+    group1    = pair[1],
+    group2    = pair[2],
+    diff      = coef(test),          # mean(group1) - mean(group2)
+    statistic = as.numeric(test$statistic),
+    df        = as.numeric(test$parameter),
+    p_value   = test$p.value,
+    conf_low  = test$conf.int[1],
+    conf_high = test$conf.int[2]
+  )
+})
+
+# Adjust p-values for multiple comparisons
+results <- results |>
+  mutate(p_adj = p.adjust(p_value, method = "bonferroni"))  # or "bonferroni"
+
+results
+```
+
+```{r}
+results |> filter(p_adj > 0.05) |> arrange(p_adj)
+```
+

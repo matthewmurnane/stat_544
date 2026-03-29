@@ -1,0 +1,502 @@
+---
+title: "chi_square_tests"
+format: pdf
+---
+
+This documents should be a clean document for all the chi-square tests we plan on doing for the statistical report
+
+1.	Chi-square on race and income
+
+2.	Chi square education and income
+
+3.	Chi square on race and income
+
+4.	Chi square on race and citizenship
+
+5.  Chi square on race and education
+
+6.  Chi square on education and citizenship
+
+```{r include=FALSE}
+library(tidyverse)
+library(arrow)
+library(purrr)
+library(survey)
+library(srvyr)
+library(broom)
+library(gt)
+library(patchwork)
+library(gridExtra)
+
+data <- read_parquet("../data/clean_data.parquet")
+
+glimpse(data)
+```
+
+```{r}
+data_chi <- data %>% 
+  #adults in the work force
+  dplyr::filter(age > 18,
+         esr != "Not in Labor Force"
+         ) %>% 
+  dplyr::mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+                cit_simp = factor(cit_simp,
+                                  levels = c("Non-Citizen",
+                                            "Citizen")),
+         income_brackets = case_when(income_personal <= 15000 ~ "0-15k",
+                                     income_personal <= 30000 ~ "15k-30k",
+                                     income_personal <= 60000 ~ "30k-60k",
+                                     income_personal <= 90000 ~ "60k-90k",
+                                     income_personal <= 120000 ~ "90k-120k",
+                                     income_personal <= 150000 ~ "120k-150k",
+                                     income_personal > 150000 ~ "150k+")) %>% 
+  dplyr::select(income_brackets, race_simp, cit_simp, education, pwgtp, pwgtp1:pwgtp80)
+
+rep_weights <- paste0("pwgtp", 1:80)
+
+acs_design <- data_chi %>%
+  as_survey_rep(
+    weights    = pwgtp,
+    repweights = all_of(rep_weights),
+    type       = "successive-difference",
+    mse        = TRUE
+)
+```
+
+### 1. Chi square: race : income
+
+```{r}
+race_inc_chi <- acs_design %>% 
+  svychisq(formula = ~ race_simp + income_brackets,
+           design = .,
+           statistic = "Chisq",
+           na.rm = TRUE)
+
+race_inc_chi
+
+race_inc_table <- race_inc_chi$observed %>% 
+  as_tibble() %>% 
+  group_by(income_brackets) %>% 
+  mutate(prop = round(n / sum (n), 2)) %>% 
+  dplyr::select(-n) %>% 
+  pivot_wider(names_from = race_simp, values_from = prop) %>% 
+  mutate(income_brackets = factor(income_brackets,
+                                  levels = c("0-15k",
+                                             "15k-30k",
+                                             "30k-60k",
+                                             "60k-90k",
+                                             "90k-120k",
+                                             "120k-150k",
+                                             "150k+"))) %>% 
+  arrange(desc(income_brackets)) %>% 
+  ungroup() %>% 
+  dplyr::select(income_brackets, Hispanic, White, Black, Asian, Other) %>% 
+  gt(rowname_col = "income_brackets") %>% 
+  tab_stubhead(label = "Income") %>% 
+  tab_spanner(label = "Race",
+              columns = everything()) %>% 
+  data_color(
+    columns = Hispanic,
+    method = "numeric",
+    palette = c("white", "#4daf4a")
+  ) %>%
+  data_color(
+    columns = White,
+    method = "numeric",
+    palette = c("white", "#377eb8")
+  ) %>%
+  data_color(
+    columns = Black,
+    method = "numeric",
+    palette = c("white", "#984ea3")
+  ) %>%
+  data_color(
+    columns = Asian,
+    method = "numeric",
+    palette = c("white", "#e41a1c")
+  ) %>%
+  data_color(
+    columns = Other,
+    method = "numeric",
+    palette = c("white", "#ff7f00")) %>% 
+  tab_source_note(
+    source_note = paste0(
+      "χ² = ", round(race_inc_chi$statistic, 2),
+      ", p ", ifelse(race_inc_chi$p.value < 0.001, "< .001", 
+                     paste0("= ", round(race_inc_chi$p.value, 3)))
+    )
+  ) 
+
+race_inc_table
+```
+
+### 2. Chi square: education : income
+
+```{r}
+edu_inc_chi <- acs_design %>% 
+  svychisq(formula = ~ education + income_brackets,
+           design = .,
+           statistic = "Chisq",
+           na.rm = TRUE)
+
+race_inc_chi
+
+
+edu_inc_table <- edu_inc_chi$observed %>% 
+  as_tibble() %>% 
+  mutate(education = case_when(
+    education %in% c("Less than High School", 
+                     "No schooling completed") ~ "Less than High School",
+    TRUE ~ education
+  )) %>%
+  group_by(income_brackets, education) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  mutate(
+    education = factor(education,
+                       levels = c("Post-bacc professional degree",
+                                  "Doctorate degree",
+                                  "Master's degree",
+                                  "Bachelor's degree",
+                                  "Associate's degree",
+                                  "Some college",
+                                  "Regular high school diploma",
+                                  "GED or alternative credential",
+                                  "Less than High School")),
+    income_brackets = factor(income_brackets,
+                             levels = c("0-15k",
+                                        "15k-30k",
+                                        "30k-60k",
+                                        "60k-90k",
+                                        "90k-120k",
+                                        "120k-150k",
+                                        "150k+"))
+  ) %>%
+  group_by(education) %>%
+  mutate(prop = round(n / sum(n), 2)) %>% 
+  dplyr::select(-n) %>% 
+  pivot_wider(names_from = income_brackets,
+              values_from = prop) %>%
+  arrange(education) %>% 
+  ungroup() %>%
+  dplyr::select(
+    education,
+    "0-15k", "15k-30k", "30k-60k", "60k-90k",
+    "90k-120k", "120k-150k", "150k+"
+  ) %>%
+  gt(rowname_col = "education") %>% 
+  tab_stubhead(label = "Education") %>% 
+  tab_spanner(label = "Income Bracket",
+              columns = everything()) %>% 
+  data_color(
+    columns = "0-15k",
+    method = "numeric",
+    palette = c("white", "#4daf4a")
+  ) %>%
+  data_color(
+    columns = "15k-30k",
+    method = "numeric",
+    palette = c("white", "#377eb8")
+  ) %>%
+  data_color(
+    columns = "30k-60k",
+    method = "numeric",
+    palette = c("white", "#984ea3")
+  ) %>%
+  data_color(
+    columns = "60k-90k",
+    method = "numeric",
+    palette = c("white", "#e41a1c")
+  ) %>%
+  data_color(
+    columns = "90k-120k",
+    method = "numeric",
+    palette = c("white", "#ff7f00")
+  ) %>%
+  data_color(
+    columns = "120k-150k",
+    method = "numeric",
+    palette = c("white", "#a65628")
+  ) %>%
+  data_color(
+    columns = "150k+",
+    method = "numeric",
+    palette = c("white", "#1b9e77")
+  ) %>%
+  tab_source_note(
+    source_note = paste0(
+      "χ² = ", round(edu_inc_chi$statistic, 2),
+      ", p ", ifelse(edu_inc_chi$p.value < 0.001, "< .001", 
+                     paste0("= ", round(edu_inc_chi$p.value, 3)))
+    )
+  )
+
+edu_inc_table
+```
+
+### 3. race and income
+
+```{r}
+race_inc_chi <- acs_design %>% 
+  svychisq(formula = ~ race_simp + income_brackets,
+           design = .,
+           statistic = "Chisq",
+           na.rm = TRUE)
+
+race_inc_table <- race_inc_chi$observed %>% 
+  as_tibble() %>% 
+  group_by(income_brackets) %>% 
+  mutate(prop = round(n / sum (n), 2)) %>% 
+  dplyr::select(-n) %>% 
+  pivot_wider(names_from = race_simp, values_from = prop) %>% 
+  mutate(income_brackets = factor(income_brackets,
+                                  levels = c("0-15k",
+                                             "15k-30k",
+                                             "30k-60k",
+                                             "60k-90k",
+                                             "90k-120k",
+                                             "120k-150k",
+                                             "150k+"))) %>% 
+  arrange(desc(income_brackets)) %>% 
+  ungroup() %>% 
+  dplyr::select(income_brackets, Hispanic, White, Black, Asian, Other) %>% 
+  gt(rowname_col = "income_brackets") %>% 
+  tab_stubhead(label = "Income") %>% 
+  tab_spanner(label = "Race",
+              columns = everything()) %>% 
+  data_color(
+    columns = Hispanic,
+    method = "numeric",
+    palette = c("white", "#4daf4a")
+  ) %>%
+  data_color(
+    columns = White,
+    method = "numeric",
+    palette = c("white", "#377eb8")
+  ) %>%
+  data_color(
+    columns = Black,
+    method = "numeric",
+    palette = c("white", "#984ea3")
+  ) %>%
+  data_color(
+    columns = Asian,
+    method = "numeric",
+    palette = c("white", "#e41a1c")
+  ) %>%
+  data_color(
+    columns = Other,
+    method = "numeric",
+    palette = c("white", "#ff7f00")) %>% 
+  tab_source_note(
+    source_note = paste0(
+      "χ² = ", round(race_inc_chi$statistic, 2),
+      ", p ", ifelse(race_inc_chi$p.value < 0.001, "< .001", 
+                     paste0("= ", round(race_inc_chi$p.value, 3)))
+    )
+  ) 
+
+
+race_inc_table
+```
+
+### 4. Chi square: citizenship : income
+
+```{r}
+race_cit_chi <- acs_design %>% 
+  svychisq(formula = ~ race_simp + cit_simp,
+           design = .,
+           statistic = "Chisq",
+           na.rm = TRUE)
+
+race_cit_chi
+
+race_cit_table <- race_cit_chi$observed %>% 
+  as_tibble() %>% 
+  group_by(cit_simp, race_simp) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  mutate(
+    race_simp = factor(race_simp,
+                       levels = c("Hispanic", "White", "Black", "Asian", "Other"))
+  ) %>%
+  group_by(race_simp) %>%
+  mutate(prop = round(n / sum(n), 2)) %>% 
+  dplyr::select(-n) %>% 
+  pivot_wider(names_from = cit_simp,
+              values_from = prop) %>%
+  arrange(race_simp) %>% 
+  ungroup() %>%
+  gt(rowname_col = "race_simp") %>% 
+  tab_stubhead(label = "Race") %>% 
+  tab_spanner(label = "Citizenship",
+              columns = everything()) %>% 
+  data_color(
+    columns = 1,
+    method = "numeric",
+    palette = c("white", "#4daf4a")
+  ) %>%
+  data_color(
+    columns = 2,
+    method = "numeric",
+    palette = c("white", "#377eb8")
+  ) %>%
+  data_color(
+    columns = 3,
+    method = "numeric",
+    palette = c("white", "#984ea3")
+  ) %>%
+  tab_source_note(
+    source_note = paste0(
+      "χ² = ", round(race_cit_chi$statistic, 2),
+      ", p ", ifelse(race_cit_chi$p.value < 0.001, "< .001", 
+                     paste0("= ", round(race_cit_chi$p.value, 3)))
+    )
+  )
+
+race_cit_table
+```
+
+### 5. Chi square: race : education
+
+```{r}
+race_edu_chi <- acs_design %>% 
+  svychisq(formula = ~ race_simp + education,
+           design = .,
+           statistic = "Chisq",
+           na.rm = TRUE)
+
+race_edu_table <- race_edu_chi$observed %>% 
+  as_tibble() %>% 
+  group_by(education) %>% 
+  mutate(prop = round(n / sum (n), 2)) %>% 
+  dplyr::select(-n) %>% 
+  pivot_wider(names_from = race_simp, values_from = prop) %>% 
+  mutate(education = factor(education,
+                            levels = c("Post-bacc professional degree",
+                                       "Doctorate degree",
+                                       "Master's degree",
+                                       "Bachelor's degree",
+                                       "Associate's degree",
+                                       "Some college",
+                                       "Regular high school diploma",
+                                       "GED or alternative credential",
+                                       "Less than High School",
+                                       "No schooling completed"))) %>% 
+  arrange(education) %>% 
+  ungroup() %>% 
+  dplyr::select(education, Hispanic, White, Black, Asian, Other) %>% 
+  gt(rowname_col = "education") %>% 
+  tab_stubhead(label = "Education") %>% 
+  tab_spanner(label = "Race",
+              columns = everything()) %>% 
+  data_color(
+    columns = Hispanic,
+    method = "numeric",
+    palette = c("white", "#4daf4a")
+  ) %>%
+  data_color(
+    columns = White,
+    method = "numeric",
+    palette = c("white", "#377eb8")
+  ) %>%
+  data_color(
+    columns = Black,
+    method = "numeric",
+    palette = c("white", "#984ea3")
+  ) %>%
+  data_color(
+    columns = Asian,
+    method = "numeric",
+    palette = c("white", "#e41a1c")
+  ) %>%
+  data_color(
+    columns = Other,
+    method = "numeric",
+    palette = c("white", "#ff7f00")) %>% 
+  tab_source_note(
+    source_note = paste0(
+      "χ² = ", round(race_edu_chi$statistic, 2),
+      ", p ", ifelse(race_edu_chi$p.value < 0.001, "< .001", 
+                     paste0("= ", round(race_edu_chi$p.value, 3)))
+    )
+  )
+
+race_edu_table
+```
+
+### chi square education : citizenship
+
+```{r}
+
+cit_edu_chi <- acs_design %>% 
+  svychisq(formula = ~ cit_simp + education,
+           design = .,
+           statistic = "Chisq",
+           na.rm = TRUE)
+
+
+cit_edu_table <- cit_edu_chi$observed %>% 
+  as_tibble() %>%
+  mutate(education = case_when(
+    education %in% c("Less than High School", 
+                     "No schooling completed") ~ "Less than High School",
+    TRUE ~ education
+  )) %>%
+  group_by(cit_simp, education) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  mutate(
+    education = factor(education,
+                       levels = c("Post-bacc professional degree",
+                                  "Doctorate degree",
+                                  "Master's degree",
+                                  "Bachelor's degree",
+                                  "Associate's degree",
+                                  "Some college",
+                                  "Regular high school diploma",
+                                  "GED or alternative credential",
+                                  "Less than High School"))
+  ) %>%
+  group_by(cit_simp) %>%
+  mutate(prop = round(n / sum(n), 2)) %>% 
+  dplyr::select(-n) %>% 
+  pivot_wider(names_from = cit_simp,
+              values_from = prop) %>%
+  arrange(education) %>% 
+  ungroup() %>%
+  dplyr::select(education, everything()) %>%
+  gt(rowname_col = "education") %>% 
+  tab_stubhead(label = "Education") %>% 
+  tab_spanner(label = "Citizenship",
+              columns = everything()) %>% 
+  data_color(
+    columns = 1,
+    method = "numeric",
+    palette = c("white", "#4daf4a")
+  ) %>%
+  data_color(
+    columns = 2,
+    method = "numeric",
+    palette = c("white", "#377eb8")
+  ) %>%
+  data_color(
+    columns = 3,
+    method = "numeric",
+    palette = c("white", "#984ea3")
+  ) %>%
+  tab_source_note(
+    source_note = paste0(
+      "χ² = ", round(cit_edu_chi$statistic, 2),
+      ", p ", ifelse(cit_edu_chi$p.value < 0.001, "< .001", 
+                     paste0("= ", round(cit_edu_chi$p.value, 3)))
+    )
+  )
+
+cit_edu_table
+```
+
+
+
+
+
+

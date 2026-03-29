@@ -1,0 +1,139 @@
+---
+title: "logistic_cit"
+format: pdf
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(arrow)
+library(purrr)
+library(survey)
+library(srvyr)
+library(broom)
+library(gt)
+library(ggthemes)
+library(patchwork)
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r echo=FALSE}
+model_inputs <- data %>% 
+  dplyr::filter(age > 18,
+         esr != "Not in Labor Force"
+         ) %>% 
+  dplyr::mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Citizen",
+                                            "Non-Citizen")),
+         education = factor(education,
+                       levels = c("Post-bacc professional degree",
+                                  "Doctorate degree",
+                                  "Master's degree",
+                                  "Bachelor's degree",
+                                  "Associate's degree",
+                                  "Some college",
+                                  "Regular high school diploma",
+                                  "GED or alternative credential",
+                                  "Less than High School"))) %>% 
+  select(race_simp, cit_simp, education, pwgtp, pwgtp1:pwgtp80)
+```
+
+
+```{r}
+logist_reg_design <- model_inputs %>% 
+  mutate(
+    cit_binary = as.numeric(cit_simp == "Non-Citizen"),  # 1 = Non-Citizen, 0 = Citizen
+    education  = relevel(factor(education), ref = "Regular high school diploma"),
+    race_simp  = relevel(factor(race_simp), ref = "White")
+  ) %>%
+  as_survey_rep(
+    weights    = pwgtp,
+    repweights = all_of(rep_weights),
+    type       = "successive-difference",
+    mse        = TRUE
+  )
+```
+
+```{r}
+log_reg <- logist_reg_design %>%
+  svyglm(
+    formula   = cit_binary ~ education + race_simp,
+    design    = .,
+    family    = binomial(link = "logit"),
+    na.action = na.omit
+  )
+
+log_reg_back <- step(log_reg, direction = "backward")
+
+summary(log_reg_back)
+```
+
+```{r}
+tidy(log_reg_back, conf.int = TRUE) %>%
+  filter(p.value < 0.05, term != "(Intercept)") %>%
+  mutate(
+    odds_ratio     = round(exp(estimate), 3),
+    percent_change = round((exp(estimate) - 1) * 100, 1),
+    conf_low       = round(exp(conf.low), 3),
+    conf_high      = round(exp(conf.high), 3),
+    p.value        = ifelse(p.value < 0.001, "< .001", round(p.value, 3))
+  ) %>%
+  dplyr::select(term, odds_ratio, percent_change, conf_low, conf_high, statistic, p.value) %>%
+  arrange(desc(percent_change)) %>% 
+  gt() %>%
+  cols_label(
+    term           = "Term",
+    percent_change = "% Change in Odds",
+    odds_ratio     = "Odds Ratio",
+    conf_low       = "95% CI Low",
+    conf_high      = "95% CI High",
+    statistic      = "t",
+    p.value        = "p"
+  ) %>%
+  tab_source_note("Odds of being Non-Citizen. Reference: Regular high school diploma, white ")
+```
+
+```{r}
+sig_odds <- tidy(log_reg_back, conf.int = TRUE) %>%
+  filter(p.value < 0.05, term != "(Intercept)") %>%
+  mutate(
+    odds_ratio     = round(exp(estimate), 3),
+    percent_change = round((exp(estimate) - 1) * 100, 1),
+    conf_low       = round(exp(conf.low), 3),
+    conf_high      = round(exp(conf.high), 3),
+    p.value        = ifelse(p.value < 0.001, "< .001", round(p.value, 3))
+  ) %>%
+  dplyr::select(term, odds_ratio, percent_change, conf_low, conf_high, statistic, p.value)
+
+make_odds_gt <- function(data, title) {
+  data %>%
+    gt() %>%
+    cols_label(
+      term           = "Term",
+      odds_ratio     = "Odds Ratio",
+      percent_change = "% Change in Odds",
+      conf_low       = "95% CI Low",
+      conf_high      = "95% CI High",
+      statistic      = "t",
+      p.value        = "p"
+    ) %>%
+    tab_header(title = title) %>%
+    tab_source_note("Odds of being Non-Citizen. Reference: Bachelor's degree, Hispanic")
+}
+
+# Top 5 increases
+sig_odds %>%
+  arrange(desc(percent_change)) %>%
+  slice_head(n = 5) %>%
+  make_odds_gt("Top 5 Largest Increases in Odds of Being Non-Citizen")
+
+# Top 5 decreases
+sig_odds %>%
+  arrange(percent_change) %>%
+  slice_head(n = 5) %>%
+  make_odds_gt("Top 5 Largest Decreases in Odds of Being Non-Citizen")
+```
+
