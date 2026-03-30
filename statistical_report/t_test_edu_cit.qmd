@@ -70,17 +70,20 @@ bach_hs_results <- map(races, ~ {
 }) %>%
   set_names(races)
 
-bach_hs_table <- map_dfr(bach_hs_results, tidy, .id = "race") %>%
+bach_hs_table <- map_dfr(bach_hs_results, tidy, conf.int = TRUE, .id = "race") %>%
   arrange(desc(estimate)) %>%
   mutate(comparison = paste0(race, ": bach - hs")) %>%
-  dplyr::select(comparison, estimate, p.value) %>%
+  dplyr::select(comparison, estimate, conf.low, conf.high, p.value) %>%
   gt() %>%
+  tab_header(title = "Table 11: Results for Bachelor's vs High School") %>% 
   cols_label(
     comparison = "Comparison",
     estimate   = "Estimate ($)",
+    conf.low   = "95% CI Low",
+    conf.high  = "95% CI High",
     p.value    = "P-Value"
   ) %>%
-  fmt_number(columns = estimate, decimals = 0) %>%
+  fmt_number(columns = c(estimate, conf.low, conf.high), decimals = 0) %>%
   fmt(columns = p.value,
       fns = ~ ifelse(. < 0.001, "< .001", round(., 3)))
 
@@ -94,22 +97,32 @@ cit_results <- map(races, ~ {
 }) %>%
   set_names(races)
 
-cit_table <- map_dfr(cit_results, tidy, .id = "race") %>%
+cit_table <- map_dfr(cit_results, tidy, conf.int = TRUE, .id = "race") %>%
   arrange(desc(estimate)) %>%
   mutate(comparison = paste0(race, ": citizen - non-citizen")) %>%
-  dplyr::select(comparison, estimate, p.value) %>%
+  dplyr::select(comparison, estimate, conf.low, conf.high, p.value) %>%
   gt() %>%
+  tab_header(title = "Table 13: Results for Citizen vs Non-Citizen") %>% 
   cols_label(
     comparison = "Comparison",
     estimate   = "Estimate ($)",
+    conf.low   = "95% CI Low",
+    conf.high  = "95% CI High",
     p.value    = "P-Value"
   ) %>%
-  fmt_number(columns = estimate, decimals = 0) %>%
+  fmt_number(columns = c(estimate, conf.low, conf.high), decimals = 0) %>%
   fmt(columns = p.value,
       fns = ~ ifelse(. < 0.001, "< .001", round(., 3)))
 
+
 bach_hs_table
 cit_table
+
+gtsave(bach_hs_table,
+       "../../statistical_report/bach_hs_table.png")
+
+gtsave(cit_table,
+       "../../statistical_report/cit_table.png")
 ```
 
 ```{r}
@@ -123,10 +136,14 @@ bach_hs_sample <- t_design %>%
   pivot_wider(names_from = "race_simp", values_from = "sample_size") %>%
   dplyr::select(education, Hispanic, White, Black, Asian, Other) %>%
   gt(rowname_col = "education") %>%
+   tab_header(title = "Table 10: Sample Sizes for Bachelor's vs High School") %>% 
   tab_stubhead(label = "Education") %>%
   tab_spanner(label = "Race", columns = everything())
 
 bach_hs_sample
+
+gtsave(bach_hs_sample,
+       "../../statistical_report/bach_hs_sample.png")
 
 # Sample size table for Citizen vs Non-Citizen
 cit_sample <- t_design %>%
@@ -137,9 +154,13 @@ cit_sample <- t_design %>%
   pivot_wider(names_from = "race_simp", values_from = "sample_size") %>%
   dplyr::select(cit_simp, Hispanic, White, Black, Asian, Other) %>%
   gt(rowname_col = "cit_simp") %>%
+  tab_header(title = "Table 12: Sample Sizes for Citizen vs Non-Citizen") %>% 
   tab_stubhead(label = "Citizenship") %>%
   tab_spanner(label = "Race", columns = everything())
 
 cit_sample
+
+gtsave(cit_sample,
+       "../../statistical_report/cit_sample.png")
 ```
 

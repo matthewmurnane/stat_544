@@ -35,7 +35,7 @@ df <- data %>%
 ```
 
 ```{r}
-df %>%
+cit_income_barchart <- df %>%
   filter(!is.na(cit_simp), !is.na(income_brackets)) %>%
   group_by(income_brackets, cit_simp) %>%
   summarise(n = n(), .groups = "drop") %>%
@@ -50,12 +50,18 @@ df %>%
   scale_y_continuous(labels = scales::percent) +
   scale_fill_manual(values = c("Citizen" = "#377eb8", "Non-Citizen" = "#e41a1c")) +
   labs(
-    title = "Non-Citizens Make Less Money Than Citizens",
+    title = "Plot 5: Non-Citizens Make Less Money Than Citizens",
     x     = "",
     y     = "",
     fill  = ""
   ) +
   theme_few()
+
+ggsave("../../statistical_report/cit_inc_barchart.png",
+       cit_income_barchart,
+       width = 10, 
+       height = 6, 
+       dpi = 600)
 ```
 
 ```{r}

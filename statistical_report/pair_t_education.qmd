@@ -78,6 +78,68 @@ results
 ```
 
 ```{r}
-results |> filter(p_adj > 0.05) |> arrange(p_adj)
+table_pair_edu <- results %>%
+  filter(p_adj > 0.05) %>%
+  arrange(p_adj) %>%
+  mutate(
+    statistic = round(statistic, 3),
+    p_value   = ifelse(p_value < 0.001, "< .001", round(p_value, 3)),
+    p_adj     = ifelse(p_adj < 0.001, "< .001", round(p_adj, 3)),
+    conf_low  = round(conf_low, 0),
+    conf_high = round(conf_high, 0)
+  ) %>%
+  gt() %>%
+  tab_header(title = "Table 3: Non-Significant Pairwise Comparisons of Income by Education") %>%
+  cols_label(
+    group1    = "Group 1",
+    group2    = "Group 2",
+    statistic = "t",
+    df        = "df",
+    p_value   = "p",
+    conf_low  = "95% CI Low",
+    conf_high = "95% CI High",
+    p_adj     = "p adjusted"
+  ) %>%
+  tab_source_note("Pairs where Bonferroni-adjusted p > .05.")
+
+gtsave(table_pair_edu,
+       "../../statistical_report/table_pair_edu.png")
+```
+
+```{r}
+summary_inc_edu <- pair_t %>%
+  mutate(
+  education = factor(education,
+                     levels = c("Post-bacc professional degree",
+                                "Doctorate degree",
+                                "Master's degree",
+                                "Bachelor's degree",
+                                "Associate's degree",
+                                "Some college",
+                                "Regular high school diploma",
+                                "GED or alternative credential",
+                                "Less than High School",
+                                "No schooling completed"))) %>%
+  filter(!is.na(income_personal), !is.na(education)) %>%
+  group_by(education) %>%
+  summarise(
+    n    = n(),
+    mean = mean(income_personal, na.rm = TRUE),
+    sd   = sd(income_personal, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(education) %>%
+  gt(rowname_col = "education") %>%
+  tab_stubhead(label = "Education") %>%
+  tab_header(title = "Table 2: Income by Education Level") %>%
+  cols_label(
+    n    = "n",
+    mean = "Mean Income ($)",
+    sd   = "SD"
+  ) %>%
+  fmt_number(columns = c(n, mean, sd), decimals = 0)
+
+gtsave(summary_inc_edu,
+       "../../statistical_report/summary_inc_edu.png")
 ```
 

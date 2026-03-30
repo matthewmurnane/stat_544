@@ -9,7 +9,7 @@ This documents should be a clean document for all the chi-square tests we plan o
 
 2.	Chi square education and income
 
-3.	Chi square on race and income
+3.	Chi square on citizenship and income
 
 4.	Chi square on race and citizenship
 
@@ -39,7 +39,12 @@ data_chi <- data %>%
   dplyr::filter(age > 18,
          esr != "Not in Labor Force"
          ) %>% 
-  dplyr::mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+  dplyr::mutate(# Merge no schooling into less than high school before factoring
+         education = case_when(
+           education == "No schooling completed" ~ "Less than High School",
+           TRUE ~ education
+         ),
+         cit_simp = ifelse(cit != "Not a U.S. citizen",
                                  "Citizen",
                                  "Non-Citizen"),
                 cit_simp = factor(cit_simp,
@@ -94,6 +99,7 @@ race_inc_table <- race_inc_chi$observed %>%
   ungroup() %>% 
   dplyr::select(income_brackets, Hispanic, White, Black, Asian, Other) %>% 
   gt(rowname_col = "income_brackets") %>% 
+  tab_header(title = "Table 4: Chi-square: Income and Race") %>% 
   tab_stubhead(label = "Income") %>% 
   tab_spanner(label = "Race",
               columns = everything()) %>% 
@@ -130,6 +136,9 @@ race_inc_table <- race_inc_chi$observed %>%
   ) 
 
 race_inc_table
+
+gtsave(race_inc_table,
+       "../../statistical_report/race_inc_table.png")
 ```
 
 ### 2. Chi square: education : income
@@ -146,11 +155,6 @@ race_inc_chi
 
 edu_inc_table <- edu_inc_chi$observed %>% 
   as_tibble() %>% 
-  mutate(education = case_when(
-    education %in% c("Less than High School", 
-                     "No schooling completed") ~ "Less than High School",
-    TRUE ~ education
-  )) %>%
   group_by(income_brackets, education) %>%
   summarise(n = sum(n), .groups = "drop") %>%
   mutate(
@@ -186,6 +190,7 @@ edu_inc_table <- edu_inc_chi$observed %>%
     "90k-120k", "120k-150k", "150k+"
   ) %>%
   gt(rowname_col = "education") %>% 
+  tab_header(title = "Table 5: Chi-square: Income and Education") %>% 
   tab_stubhead(label = "Education") %>% 
   tab_spanner(label = "Income Bracket",
               columns = everything()) %>% 
@@ -233,23 +238,26 @@ edu_inc_table <- edu_inc_chi$observed %>%
   )
 
 edu_inc_table
+
+gtsave(edu_inc_table,
+       "../../statistical_report/edu_inc_table.png")
 ```
 
-### 3. race and income
+### 3. cit and income
 
 ```{r}
-race_inc_chi <- acs_design %>% 
-  svychisq(formula = ~ race_simp + income_brackets,
+cit_inc_chi <- acs_design %>% 
+  svychisq(formula = ~ cit_simp + income_brackets,
            design = .,
            statistic = "Chisq",
            na.rm = TRUE)
 
-race_inc_table <- race_inc_chi$observed %>% 
+cit_inc_table <- cit_inc_chi$observed %>% 
   as_tibble() %>% 
   group_by(income_brackets) %>% 
-  mutate(prop = round(n / sum (n), 2)) %>% 
+  mutate(prop = round(n / sum(n), 2)) %>% 
   dplyr::select(-n) %>% 
-  pivot_wider(names_from = race_simp, values_from = prop) %>% 
+  pivot_wider(names_from = cit_simp, values_from = prop) %>% 
   mutate(income_brackets = factor(income_brackets,
                                   levels = c("0-15k",
                                              "15k-30k",
@@ -260,45 +268,33 @@ race_inc_table <- race_inc_chi$observed %>%
                                              "150k+"))) %>% 
   arrange(desc(income_brackets)) %>% 
   ungroup() %>% 
-  dplyr::select(income_brackets, Hispanic, White, Black, Asian, Other) %>% 
+  dplyr::select(income_brackets, Citizen, `Non-Citizen`) %>% 
   gt(rowname_col = "income_brackets") %>% 
+  tab_header(title = "Table 7: Chi-square: Income and Citizenship") %>% 
   tab_stubhead(label = "Income") %>% 
-  tab_spanner(label = "Race",
-              columns = everything()) %>% 
+  tab_spanner(label = "Citizenship", columns = everything()) %>% 
   data_color(
-    columns = Hispanic,
+    columns = Citizen,
     method = "numeric",
     palette = c("white", "#4daf4a")
   ) %>%
   data_color(
-    columns = White,
+    columns = `Non-Citizen`,
     method = "numeric",
     palette = c("white", "#377eb8")
   ) %>%
-  data_color(
-    columns = Black,
-    method = "numeric",
-    palette = c("white", "#984ea3")
-  ) %>%
-  data_color(
-    columns = Asian,
-    method = "numeric",
-    palette = c("white", "#e41a1c")
-  ) %>%
-  data_color(
-    columns = Other,
-    method = "numeric",
-    palette = c("white", "#ff7f00")) %>% 
   tab_source_note(
     source_note = paste0(
-      "χ² = ", round(race_inc_chi$statistic, 2),
-      ", p ", ifelse(race_inc_chi$p.value < 0.001, "< .001", 
-                     paste0("= ", round(race_inc_chi$p.value, 3)))
+      "χ² = ", round(cit_inc_chi$statistic, 2),
+      ", p ", ifelse(cit_inc_chi$p.value < 0.001, "< .001", 
+                     paste0("= ", round(cit_inc_chi$p.value, 3)))
     )
-  ) 
+  )
 
+cit_inc_table
 
-race_inc_table
+gtsave(cit_inc_table,
+       "../../statistical_report/cit_inc_table.png")
 ```
 
 ### 4. Chi square: citizenship : income
@@ -328,6 +324,7 @@ race_cit_table <- race_cit_chi$observed %>%
   arrange(race_simp) %>% 
   ungroup() %>%
   gt(rowname_col = "race_simp") %>% 
+  tab_header(title = "Table 8: Chi-square: Race and Citizenship") %>% 
   tab_stubhead(label = "Race") %>% 
   tab_spanner(label = "Citizenship",
               columns = everything()) %>% 
@@ -355,6 +352,9 @@ race_cit_table <- race_cit_chi$observed %>%
   )
 
 race_cit_table
+
+gtsave(race_cit_table,
+       "../../statistical_report/race_cit_table.png")
 ```
 
 ### 5. Chi square: race : education
@@ -387,6 +387,7 @@ race_edu_table <- race_edu_chi$observed %>%
   ungroup() %>% 
   dplyr::select(education, Hispanic, White, Black, Asian, Other) %>% 
   gt(rowname_col = "education") %>% 
+  tab_header(title = "Table 6: Chi-square: Race and Education") %>% 
   tab_stubhead(label = "Education") %>% 
   tab_spanner(label = "Race",
               columns = everything()) %>% 
@@ -423,6 +424,9 @@ race_edu_table <- race_edu_chi$observed %>%
   )
 
 race_edu_table
+
+gtsave(race_edu_table,
+       "../../statistical_report/race_edu_table.png")
 ```
 
 ### chi square education : citizenship
@@ -438,11 +442,6 @@ cit_edu_chi <- acs_design %>%
 
 cit_edu_table <- cit_edu_chi$observed %>% 
   as_tibble() %>%
-  mutate(education = case_when(
-    education %in% c("Less than High School", 
-                     "No schooling completed") ~ "Less than High School",
-    TRUE ~ education
-  )) %>%
   group_by(cit_simp, education) %>%
   summarise(n = sum(n), .groups = "drop") %>%
   mutate(
@@ -466,6 +465,7 @@ cit_edu_table <- cit_edu_chi$observed %>%
   ungroup() %>%
   dplyr::select(education, everything()) %>%
   gt(rowname_col = "education") %>% 
+  tab_header(title = "Table 9: Chi-square: Education and Citizenship") %>% 
   tab_stubhead(label = "Education") %>% 
   tab_spanner(label = "Citizenship",
               columns = everything()) %>% 
@@ -493,6 +493,9 @@ cit_edu_table <- cit_edu_chi$observed %>%
   )
 
 cit_edu_table
+
+gtsave(cit_edu_table,
+       "../../statistical_report/cit_edu_table.png")
 ```
 
 

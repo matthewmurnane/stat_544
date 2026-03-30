@@ -22,7 +22,13 @@ model_inputs <- data %>%
   dplyr::filter(age > 18,
          esr != "Not in Labor Force"
          ) %>% 
-  dplyr::mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+  dplyr::mutate(
+         # Merge no schooling into less than high school before factoring
+         education = case_when(
+           education == "No schooling completed" ~ "Less than High School",
+           TRUE ~ education
+         ),
+         cit_simp = ifelse(cit != "Not a U.S. citizen",
                                  "Citizen",
                                  "Non-Citizen"),
          cit_simp = factor(cit_simp,
@@ -41,12 +47,22 @@ model_inputs <- data %>%
   select(race_simp, cit_simp, education, pwgtp, pwgtp1:pwgtp80)
 ```
 
+```{r}
+model_inputs %>%
+  filter(cit_simp == "Citizen",
+         race_simp != "Hispanic") %>% 
+  summarise(
+    education = names(sort(table(education), decreasing = TRUE))[1],
+    race_simp = names(sort(table(race_simp), decreasing = TRUE))[1]
+  )
+```
+
 
 ```{r}
 logist_reg_design <- model_inputs %>% 
   mutate(
     cit_binary = as.numeric(cit_simp == "Non-Citizen"),  # 1 = Non-Citizen, 0 = Citizen
-    education  = relevel(factor(education), ref = "Regular high school diploma"),
+    education  = relevel(factor(education), ref = "Bachelor's degree"),
     race_simp  = relevel(factor(race_simp), ref = "White")
   ) %>%
   as_survey_rep(
@@ -60,7 +76,7 @@ logist_reg_design <- model_inputs %>%
 ```{r}
 log_reg <- logist_reg_design %>%
   svyglm(
-    formula   = cit_binary ~ education + race_simp,
+    formula   = cit_binary ~ education + race_simp + education:race_simp,
     design    = .,
     family    = binomial(link = "logit"),
     na.action = na.omit
@@ -72,9 +88,10 @@ summary(log_reg_back)
 ```
 
 ```{r}
-tidy(log_reg_back, conf.int = TRUE) %>%
+log_full_table <- tidy(log_reg_back, conf.int = TRUE) %>%
   filter(p.value < 0.05, term != "(Intercept)") %>%
   mutate(
+    term           = str_remove_all(term, "education|race_simp|cit_simp"),
     odds_ratio     = round(exp(estimate), 3),
     percent_change = round((exp(estimate) - 1) * 100, 1),
     conf_low       = round(exp(conf.low), 3),
@@ -84,6 +101,7 @@ tidy(log_reg_back, conf.int = TRUE) %>%
   dplyr::select(term, odds_ratio, percent_change, conf_low, conf_high, statistic, p.value) %>%
   arrange(desc(percent_change)) %>% 
   gt() %>%
+  tab_header(title = "Table S3: Full Results for Logistic Regression") %>% 
   cols_label(
     term           = "Term",
     percent_change = "% Change in Odds",
@@ -93,13 +111,19 @@ tidy(log_reg_back, conf.int = TRUE) %>%
     statistic      = "t",
     p.value        = "p"
   ) %>%
-  tab_source_note("Odds of being Non-Citizen. Reference: Regular high school diploma, white ")
+  tab_source_note("Reference: Bachelor's degree, white ")
+
+log_full_table
+
+gtsave(log_full_table,
+       "../../statistical_report/log_full_table.png")
 ```
 
 ```{r}
 sig_odds <- tidy(log_reg_back, conf.int = TRUE) %>%
   filter(p.value < 0.05, term != "(Intercept)") %>%
   mutate(
+    term           = str_remove_all(term, "education|race_simp|cit_simp"),
     odds_ratio     = round(exp(estimate), 3),
     percent_change = round((exp(estimate) - 1) * 100, 1),
     conf_low       = round(exp(conf.low), 3),
@@ -121,19 +145,24 @@ make_odds_gt <- function(data, title) {
       p.value        = "p"
     ) %>%
     tab_header(title = title) %>%
-    tab_source_note("Odds of being Non-Citizen. Reference: Bachelor's degree, Hispanic")
+    tab_source_note("Reference: Bachelor's degree, white ")
 }
 
 # Top 5 increases
-sig_odds %>%
+log_5_increase <- sig_odds %>%
   arrange(desc(percent_change)) %>%
   slice_head(n = 5) %>%
-  make_odds_gt("Top 5 Largest Increases in Odds of Being Non-Citizen")
+  make_odds_gt("Table 16: Top 5 Largest Increases in Odds of Being Non-Citizen")
 
 # Top 5 decreases
-sig_odds %>%
+log_5_decrease <- sig_odds %>%
   arrange(percent_change) %>%
   slice_head(n = 5) %>%
-  make_odds_gt("Top 5 Largest Decreases in Odds of Being Non-Citizen")
+  make_odds_gt("Table 17: Top 5 Largest Decreases in Odds of Being Non-Citizen")
+
+gtsave(log_5_increase,
+       "../../statistical_report/log_5_increase.png")
+gtsave(log_5_decrease,
+       "../../statistical_report/log_5_decrease.png")
 ```
 

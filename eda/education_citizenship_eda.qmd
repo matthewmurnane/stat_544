@@ -124,16 +124,21 @@ rac_cit_plot <- citizen_eda_18 %>%
         axis.ticks.x = element_blank(),
         plot.title = element_text(hjust = 0.5)) +
   labs(
-    #title = "Race Is Disproportionately Spread Across Citizenship Status",
+    title = "Plot 4: Race Is Disproportionately Spread Across Citizenship Status",
        #caption = "Source: ACS PUMS 2024 for LA County",
        fill = "")
 
-ggsave("../../midterm_presentation/rac_cit_plot.png",
+ggsave("../../statistical_report/rac_cit_plot.png",
        rac_cit_plot,
        width = 10, 
        height = 6, 
        dpi = 600)
 ```
+
+```{r}
+rac_cit_plot
+```
+
 
 ```{r}
 test <- chisq.test(table(citizen_eda_18$race_simp,

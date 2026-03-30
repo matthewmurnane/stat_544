@@ -60,7 +60,11 @@ log_income_hist <- model_inputs %>%
     labs(x = "log(Income)",
          y = "")
 
-income_hist + log_income_hist + plot_annotation(title = "Distribution of Income and log(Income)")
+income_distribution_plot <- income_hist + log_income_hist + plot_annotation(title = "Plot 6: Distribution of Income and log(Income)")
+
+ggsave("../../statistical_report/income_dis_plot.png",
+       income_distribution_plot,
+       dpi = 600,  width = 10, height = 5)
 ```
 ```{r}
 # Find most common category for each variable
@@ -105,7 +109,7 @@ mult_reg_back <- step(mult_reg, direction = "backward")
 ```
   
 ```{r}
-tidy(mult_reg_back, conf.int = TRUE) %>%
+all_inputs <- tidy(mult_reg_back, conf.int = TRUE) %>%
   filter(p.value < 0.05, term != "(Intercept)") %>%
   mutate(
     percent_change = round((exp(estimate) - 1) * 100, 1),
@@ -120,6 +124,7 @@ tidy(mult_reg_back, conf.int = TRUE) %>%
   dplyr::select(term, percent_change, conf_low, conf_high, statistic, p.value) %>%
   arrange(desc(percent_change)) %>% 
   gt() %>%
+  tab_header(title = "Table S2: Full Results for Multiple Linear Regression") %>% 
   cols_label(
     term           = "Term",
     percent_change = "% Change in Income",
@@ -129,12 +134,16 @@ tidy(mult_reg_back, conf.int = TRUE) %>%
     p.value        = "p"
   ) %>%
   tab_source_note("% change relative to reference category, holding all else constant")
+
+gtsave(all_inputs,
+       "../../statistical_report/all_inputs_mul.png")
 ```
   
 ```{r}
 sig_coefs <- tidy(mult_reg_back, conf.int = TRUE) %>%
   filter(p.value < 0.05, term != "(Intercept)") %>%
   mutate(
+    term           = str_remove_all(term, "education|race_simp|cit_simp"),
     percent_change = round((exp(estimate) - 1) * 100, 1),
     estimate       = round(estimate, 3),
     std.error      = round(std.error, 3),
@@ -165,16 +174,21 @@ make_gt <- function(data, title) {
 top5_increase <- sig_coefs %>%
   arrange(desc(percent_change)) %>%
   slice_head(n = 5) %>%
-  make_gt("Top 5 Largest Income Increases")
+  make_gt("Table 14: Top 5 Largest Income Increases")
 
 # Top 5 decreases
 top5_decrease <- sig_coefs %>%
   arrange(percent_change) %>%
   slice_head(n = 5) %>%
-  make_gt("Top 5 Largest Income Decreases")
+  make_gt("Table 15: Top 5 Largest Income Decreases")
 
 top5_increase
 top5_decrease
+
+gtsave(top5_increase,
+       "../../statistical_report/mult_top5_increases.png")
+gtsave(top5_decrease,
+       "../../statistical_report/mult_top5_decreases.png")
 ```
   
 

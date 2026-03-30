@@ -41,14 +41,16 @@ edu_inc_plot <- education_eda_18 %>%
                  outlier.shape = NA) + 
   theme_few() +
   ylab("") +
-  xlab("") +
+  xlab("Income (Thousands)") +
   labs(
-    #title = "Higher Education Level Is Associated with Higher Income",
+    title = "Plot 1: Higher Education Level Is Associated with Higher Income",
        #caption = "Source: ACS PUMS 2024 for LA County"
        ) +
   theme(plot.title = element_text(hjust = 0.5))
 
-ggsave("../../midterm_presentation/edu_inc_plot.png",
+edu_inc_plot
+
+ggsave("../../statistical_report/edu_inc_plot.png",
        edu_inc_plot,
        width = 10, 
        height = 6, 
@@ -87,11 +89,13 @@ race_edu_plot <- education_eda_18 %>%
         axis.ticks.x = element_blank(),
         plot.title = element_text(hjust = 0.5)) +
   labs(fill = "",
-       #title = "Race Is Disproportionately Spread Across Education Levels",
+       title = "Plot 2: Race Is Disproportionately Spread Across Education Levels",
        #caption = "Source: ACS PUMS 2024 for LA County"
        )
 
-ggsave("../../midterm_presentation/race_edu_plot.png",
+race_edu_plot
+
+ggsave("../../statistical_report//race_edu_plot.png",
        race_edu_plot,
        width = 10, 
        height = 6, 
@@ -134,13 +138,15 @@ inc_race_plot <-education_eda_18 %>%
     theme(axis.text.x = element_blank(),
          axis.ticks.x = element_blank()) +
     labs(fill = "",
-         #title = "Race Is Disproportionately Spread Across Income Brackets",
+         title = "Plot 3: Race Is Disproportionately Spread Across Income Brackets",
         #caption = "Source: ACS PUMS 2024 for LA County"
         ) +
     xlab("")+
     ylab("")
 
-ggsave("../../midterm_presentation/inc_race_plot.png",
+inc_race_plot
+
+ggsave("../../statistical_report/inc_race_plot.png",
        inc_race_plot,
        width = 10, 
        height = 6, 
@@ -148,6 +154,6 @@ ggsave("../../midterm_presentation/inc_race_plot.png",
 ```
 
 ```{r}
-inc_race_plot / race_edu_plot
+inc_race_plot / race_edu_plot + plot_annotation(caption = "Figure")
 ```
 
