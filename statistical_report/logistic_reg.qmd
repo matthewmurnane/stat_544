@@ -57,6 +57,7 @@ model_inputs %>%
   )
 ```
 
+# The full logistic design
 
 ```{r}
 logist_reg_design <- model_inputs %>% 
