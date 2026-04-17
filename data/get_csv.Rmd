@@ -1,0 +1,12 @@
+```{r}
+library(arrow)
+```
+
+```{r}
+# Read parquet file
+df <- read_parquet("clean_data.parquet")
+
+# Write to CSV
+write.csv(df, "clean_data.csv", row.names = FALSE)
+```
+
