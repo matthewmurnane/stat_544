@@ -46,6 +46,14 @@ totals <- income_by_education %>%
   group_by(race) %>%
   summarise(total = n())
 print(totals)
+
+library(knitr)
+
+totals <- income_by_education %>%
+  group_by(race) %>%
+  summarise(total = n(), .groups = "drop")
+
+kable(totals, col.names = c("Race", "Total Observations"))
 ```
 
 
@@ -78,6 +86,20 @@ print(confidence_intervals)
 ggplot(point_estimates, aes(x = education, y = mean_income, fill = race)) +
   geom_bar(stat = "identity", position = "dodge") +
    geom_text(aes(label = n), position = position_dodge(width = 0.9), vjust = -0.3)
+
+ggplot(point_estimates, aes(x = education, y = mean_income, fill = race)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(
+    aes(label = n),
+    position = position_dodge(width = 0.9),
+    vjust = -0.3
+  ) +
+  labs(
+    x = "Education Level",
+    y = "Mean Personal Income",
+    fill = "Race"
+  ) +
+  scale_fill_discrete(labels = totals)
 ```
 ```{r}
 anova1 <- aov(income_personal ~ education + race, data = income_by_education)
@@ -166,6 +188,13 @@ income_education <- acs_design %>%
     education %in% c("Regular high school diploma", "Bachelor's degree"),
     race_simp != "American Native" & race_simp != "Native Alaskan", race_simp != "Native Hawaiin or Pacific Islander"
 )
+```
+
+```{r}
+totals <- income_education %>%
+  group_by(race_simp) %>%
+  summarise(total = n())
+print(totals)
 ```
 
 
