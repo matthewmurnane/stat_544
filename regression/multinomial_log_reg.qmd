@@ -1,0 +1,127 @@
+---
+title: "multinomial"
+format: pdf
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(arrow)
+library(purrr)
+library(survey)
+library(srvyr)
+library(broom)
+library(gt)
+library(ggthemes)
+library(patchwork)
+library(svyVGAM)
+library(VGAM)
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r echo=FALSE}
+model_inputs <- data %>% 
+  dplyr::filter(age > 18,
+         esr != "Not in Labor Force") %>% 
+  dplyr::mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Citizen", "Non-Citizen")),
+         
+         race_simp = factor(race_simp, 
+                            levels = c("White", "Black", "Hispanic", 
+                                       "Asian", "Other")),  # White is reference (last)
+         
+         education = factor(case_when(
+           education %in% c("Post-bacc professional degree",
+                            "Doctorate degree",
+                            "Master's degree")                      ~ "Graduate degree",
+           education == "Bachelor's degree"                         ~ "Bachelor's degree",
+           education %in% c("Associate's degree",
+                            "Some college")                         ~ "Some college",
+           education %in% c("Regular high school diploma",
+                            "GED or alternative credential")        ~ "High school diploma or equivalent",
+           education == "Less than High School"                     ~ "Less than High School"
+         ),
+         levels = c("High school diploma or equivalent",
+                    "Graduate degree",
+                    "Bachelor's degree",
+                    "Some college",
+                    "Less than High School")),  # HS diploma is reference (last)
+         
+         income_bracket = factor(case_when(
+           income_personal <= 50000                             ~ "0-50k",
+           income_personal > 50000 & income_personal <= 100000  ~ "50k-100k",
+           income_personal > 100000 & income_personal <= 150000 ~ "100k-150k",
+           income_personal > 150000                             ~ "150k+"
+         ),
+         levels = c("150k+", "100k-150k", "50k-100k", "0-50k")),  # 0-50k is reference (last)
+         
+         income_quantile = cut(income_personal,
+                               breaks = quantile(income_personal, 
+                                                 probs = seq(0, 1, 0.25), 
+                                                 na.rm = TRUE),
+                               labels = c("Q1", "Q2", "Q3", "Q4"),
+                               include.lowest = TRUE)) %>% 
+  select(income_personal, income_bracket, income_quantile,
+         race_simp, cit_simp, education, 
+         pwgtp, pwgtp1:pwgtp80, age)
+
+glimpse(model_inputs[1:8])
+```
+
+```{r}
+# Convert race_simp to factor with White as reference
+model_inputs <- model_inputs %>%
+  mutate(race_simp = factor(race_simp, 
+                            levels = c("White", "Black", 
+                                       "Hispanic", "Asian", "Other")))
+
+rep_weights <- paste0("pwgtp", 1:80)
+
+# Survey design using replicate weights
+des <- svrepdesign(
+  weights = ~pwgtp,
+    repweights = all_of(rep_weights),
+  type = "successive-difference",
+  mse = TRUE,
+  data = model_inputs
+)
+
+# Model 1: Fixed income brackets
+mod_bracket <- svy_vglm(
+  income_bracket ~ race_simp * cit_simp + 
+                   race_simp * education + 
+                   cit_simp * education +
+                   age,
+  design = des,
+  family = VGAM::multinomial()
+)
+
+# Model 2: Income quantiles
+mod_quantile <- svy_vglm(
+  income_quantile ~ race_simp * cit_simp + 
+                   race_simp * education + 
+                   cit_simp * education +
+                   age,
+  design = des,
+  family = VGAM::multinomial()
+)
+```
+
+```{r}
+mod_bracket_results <- summary(mod_bracket)$coeftable %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column("term") %>%
+  rename(coef = Coef, se = SE, z = z, p = p) %>%
+  filter(p < 0.05) %>%
+  mutate(odds_ratio = exp(coef),
+         across(c(coef, se, z, odds_ratio), ~round(.x, 4)),
+         p = format.pval(p, digits = 3))
+```
+
+```{r}
+mod_bracket_results
+```
+

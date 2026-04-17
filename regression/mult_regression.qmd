@@ -1,0 +1,305 @@
+---
+title: "multiple_linear_regression"
+format: pdf
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(arrow)
+library(purrr)
+library(survey)
+library(srvyr)
+library(broom)
+library(gt)
+library(ggthemes)
+library(patchwork)
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r echo=FALSE}
+model_inputs <- data %>% 
+  dplyr::filter(age > 18,
+         esr != "Not in Labor Force") %>% 
+  dplyr::mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Citizen",
+                                            "Non-Citizen")),
+         education = factor(education,
+                       levels = c("Post-bacc professional degree",
+                                  "Doctorate degree",
+                                  "Master's degree",
+                                  "Bachelor's degree",
+                                  "Associate's degree",
+                                  "Some college",
+                                  "Regular high school diploma",
+                                  "GED or alternative credential",
+                                  "Less than High School"))) %>% 
+  select(income_personal, race_simp, cit_simp, education, pwgtp, pwgtp1:pwgtp80, age)
+```
+
+```{r warning=FALSE, message=FALSE}
+income_hist <- model_inputs %>% 
+  ggplot() +
+    theme_few()+
+    geom_histogram(aes(x = income_personal),
+                   fill = "black",
+                   bins = 150) +
+    labs(x = "Income")
+
+log_income_hist <- model_inputs %>% 
+  mutate(log_income = log(income_personal)) %>% 
+  filter(is.finite(log_income)) %>% 
+  ggplot() +
+    theme_few() +
+    geom_histogram(aes(x = log_income),
+                   fill = "black",
+                   bins = 100) +
+    labs(x = "log(Income)",
+         y = "")
+
+income_distribution_plot <- income_hist + log_income_hist + plot_annotation(title = "Plot 6: Distribution of Income and log(Income)")
+
+ggsave("../../statistical_report/income_dis_plot.png",
+       income_distribution_plot,
+       dpi = 600,  width = 10, height = 5)
+```
+
+```{r}
+# Find most common category for each variable
+model_inputs %>%
+  summarise(
+    education = names(sort(table(education), decreasing = TRUE))[1],
+    race_simp = names(sort(table(race_simp), decreasing = TRUE))[1],
+    cit_simp  = names(sort(table(cit_simp),  decreasing = TRUE))[1]
+  )
+```
+  
+```{r warning=FALSE}
+rep_weights <- paste0("pwgtp", 1:80)
+
+mult_reg_design <- model_inputs %>% 
+  mutate(
+    log_income = log(income_personal),
+    education  = relevel(factor(education), ref = "Bachelor's degree"),
+    race_simp  = relevel(factor(race_simp), ref = "Hispanic"),
+    cit_simp   = relevel(factor(cit_simp),  ref = "Citizen")
+  ) %>% 
+  filter(is.finite(log_income)) %>% 
+  as_survey_rep(
+    weights    = pwgtp,
+    repweights = all_of(rep_weights),
+    type       = "successive-difference",
+    mse        = TRUE
+  )
+```
+
+  
+# Mult regression on everybody
+
+```{r}
+mult_reg <- mult_reg_design %>% 
+  svyglm(
+    formula = log_income ~ age + education + race_simp + cit_simp + 
+          education:race_simp + education:cit_simp + race_simp:cit_simp,
+    design = .,
+    na.action = na.omit
+  )
+
+mult_reg_back <- step(mult_reg, direction = "backward")
+```
+  
+```{r}
+all_inputs <- tidy(mult_reg_back, conf.int = TRUE) %>%
+  filter(p.value < 0.05, term != "(Intercept)") %>%
+  mutate(
+    percent_change = round((exp(estimate) - 1) * 100, 1),
+    estimate      = round(estimate, 3),
+    std.error     = round(std.error, 3),
+    statistic     = round(statistic, 3),
+    p.value       = ifelse(p.value < 0.001, "< .001", 
+                           round(p.value, 3)),
+    conf_low      = round((exp(conf.low) - 1) * 100, 1),
+    conf_high     = round((exp(conf.high) - 1) * 100, 1)
+  ) %>%
+  dplyr::select(term, percent_change, conf_low, conf_high, statistic, p.value) %>%
+  arrange(desc(percent_change)) %>% 
+  gt() %>%
+  tab_header(title = "Table S2: Full Results for Multiple Linear Regression") %>% 
+  cols_label(
+    term           = "Term",
+    percent_change = "% Change in Income",
+    conf_low       = "95% CI Low",
+    conf_high      = "95% CI High",
+    statistic      = "t",
+    p.value        = "p"
+  ) %>%
+  tab_source_note("% change relative to reference category, holding all else constant")
+
+gtsave(all_inputs,
+       "../../statistical_report/all_inputs_mul.png")
+```
+  
+```{r}
+sig_coefs <- tidy(mult_reg_back, conf.int = TRUE) %>%
+  filter(p.value < 0.05, term != "(Intercept)") %>%
+  mutate(
+    term           = str_remove_all(term, "education|race_simp|cit_simp"),
+    percent_change = round((exp(estimate) - 1) * 100, 1),
+    estimate       = round(estimate, 3),
+    std.error      = round(std.error, 3),
+    statistic      = round(statistic, 3),
+    p.value        = ifelse(p.value < 0.001, "< .001", 
+                            round(p.value, 3)),
+    conf_low       = round((exp(conf.low) - 1) * 100, 1),
+    conf_high      = round((exp(conf.high) - 1) * 100, 1)
+  ) %>%
+  dplyr::select(term, percent_change, conf_low, conf_high, statistic, p.value)
+
+make_gt <- function(data, title) {
+  data %>%
+    gt() %>%
+    cols_label(
+      term           = "Term",
+      percent_change = "% Change in Income",
+      conf_low       = "95% CI Low",
+      conf_high      = "95% CI High",
+      statistic      = "t",
+      p.value        = "p"
+    ) %>%
+    tab_header(title = title) %>%
+    tab_source_note("% change relative to reference category, holding all else constant")
+}
+
+# Top 5 increases
+top5_increase <- sig_coefs %>%
+  arrange(desc(percent_change)) %>%
+  slice_head(n = 5) %>%
+  make_gt("Table 14: Top 5 Largest Income Increases")
+
+# Top 5 decreases
+top5_decrease <- sig_coefs %>%
+  arrange(percent_change) %>%
+  slice_head(n = 5) %>%
+  make_gt("Table 15: Top 5 Largest Income Decreases")
+
+top5_increase
+top5_decrease
+
+gtsave(top5_increase,
+       "../../statistical_report/mult_top5_increases.png")
+gtsave(top5_decrease,
+       "../../statistical_report/mult_top5_decreases.png")
+```
+  
+# Mult for just hispanic people
+
+```{r}
+model_inputs_hisp <- data %>% 
+  dplyr::filter(age > 18,
+         esr != "Not in Labor Force") %>% 
+  dplyr::mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Citizen",
+                                            "Non-Citizen")),
+         education = factor(education,
+                       levels = c("Post-bacc professional degree",
+                                  "Doctorate degree",
+                                  "Master's degree",
+                                  "Bachelor's degree",
+                                  "Associate's degree",
+                                  "Some college",
+                                  "Regular high school diploma",
+                                  "GED or alternative credential",
+                                  "Less than High School"))) %>% 
+  dplyr::filter(race_simp == "Hispanic") %>% 
+  select(income_personal, race_simp, cit_simp, education, pwgtp, pwgtp1:pwgtp80, age)
+```
+
+```{r}
+model_inputs_hisp %>%
+  summarise(
+    education = names(sort(table(education), decreasing = TRUE))[1],
+    cit_simp  = names(sort(table(cit_simp),  decreasing = TRUE))[1]
+  )
+
+model_inputs_hisp %>% 
+  filter(education == "Regular high school diploma",
+         cit_simp == "Non-Citizen") %>% 
+  nrow()
+```
+
+
+```{r}
+rep_weights <- paste0("pwgtp", 1:80)
+
+mult_reg_design_hisp <- model_inputs_hisp %>% 
+  mutate(
+    log_income = log(income_personal),
+    education  = relevel(factor(education), ref = "Regular high school diploma"),
+    cit_simp   = relevel(factor(cit_simp),  ref = "Non-Citizen")
+  ) %>% 
+  filter(is.finite(log_income)) %>% 
+  as_survey_rep(
+    weights    = pwgtp,
+    repweights = all_of(rep_weights),
+    type       = "successive-difference",
+    mse        = TRUE
+  )
+```
+
+```{r}
+mult_reg_hisp <- mult_reg_design_hisp %>% 
+  svyglm(
+    formula = log_income ~ age + education + cit_simp + 
+           education:cit_simp,
+    design = .,
+    na.action = na.omit
+  )
+
+mult_reg_back_hisp <- step(mult_reg_hisp, direction = "backward")
+```
+```{r}
+tidy(mult_reg_back_hisp, conf.int = TRUE) %>% 
+  filter(p.value < 0.05)
+```
+
+
+```{r}
+all_inputs_hisp <- tidy(mult_reg_back_hisp, conf.int = TRUE) %>%
+  filter(p.value < 0.05, term != "(Intercept)") %>%
+  mutate(
+    term           = str_remove_all(term, "education|race_simp|cit_simp"),
+    percent_change = round((exp(estimate) - 1) * 100, 1),
+    estimate      = round(estimate, 3),
+    std.error     = round(std.error, 3),
+    statistic     = round(statistic, 3),
+    p.value       = ifelse(p.value < 0.001, "< .001", 
+                           round(p.value, 3)),
+    conf_low      = round((exp(conf.low) - 1) * 100, 1),
+    conf_high     = round((exp(conf.high) - 1) * 100, 1)
+  ) %>%
+  dplyr::select(term, percent_change, conf_low, conf_high, statistic, p.value) %>%
+  arrange(desc(percent_change)) %>% 
+  gt() %>%
+  tab_header(title = "Significant Covariates for Hispanic Multiple Regression Model") %>% 
+  cols_label(
+    term           = "Term",
+    percent_change = "% Change in Income",
+    conf_low       = "95% CI Low",
+    conf_high      = "95% CI High",
+    statistic      = "t",
+    p.value        = "p"
+  ) %>%
+  tab_source_note("% change relative to reference category (High school diploma and Non-Citizen)")
+
+all_inputs_hisp
+
+gtsave(all_inputs_hisp,
+       "../../statistical_report/all_inputs_hisp.png")
+```
+
