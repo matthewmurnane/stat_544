@@ -13,9 +13,9 @@ data <- read_parquet("../data/clean_data.parquet")
 ```
 
 ```{r echo=FALSE}
-#-------------------------------
-# Build modeling data (logistic/MLR style: include pwgtp + pwgtp1:pwgtp80)
-#-------------------------------
+
+# Data 
+
 model_inputs <- data %>% 
   dplyr::filter(age > 18,
                 esr != "Not in Labor Force") %>% 
@@ -39,9 +39,6 @@ model_inputs <- data %>%
   ) %>% 
   select(income_personal, race_simp, cit_simp, education, pwgtp, pwgtp1:pwgtp80, age)
 
-#-------------------------------
-# Keep rep weights in the dataset; add log_income + reference levels
-#-------------------------------
 rep_weights <- paste0("pwgtp", 1:80)
 
 ridge_design <- model_inputs %>% 
@@ -58,9 +55,9 @@ ridge_design <- model_inputs %>%
     cit_simp   = droplevels(factor(cit_simp))
   )
 
-#-------------------------------
-# Weighted train/test split (use ridge_design)
-#-------------------------------
+
+# Train/test split 
+
 set.seed(123)
 idx <- sample(seq_len(nrow(ridge_design)), size = 0.7 * nrow(ridge_design))
 train <- ridge_design[idx, ]
@@ -72,9 +69,7 @@ w_test  <- test$pwgtp
 w_rmse <- function(y, yhat, w) sqrt(weighted.mean((y - yhat)^2, w, na.rm = TRUE))
 w_mae  <- function(y, yhat, w) weighted.mean(abs(y - yhat), w, na.rm = TRUE)
 
-#-------------------------------
-# NA-safe model matrices
-#-------------------------------
+
 vars_needed <- c("log_income","age","education","race_simp","cit_simp","pwgtp")
 
 train_cc <- train %>% filter(if_all(all_of(vars_needed), ~ !is.na(.)))
@@ -88,9 +83,8 @@ x_test  <- model.matrix(log_income ~ age + education + race_simp + cit_simp, dat
 y_train <- train_cc$log_income
 y_test  <- test_cc$log_income
 
-#-------------------------------
 # Ridge fit + weighted evaluation
-#-------------------------------
+
 set.seed(123)
 cv_ridge <- cv.glmnet(x_train, y_train, alpha = 0, weights = w_train_cc)
 ridge_fit <- glmnet(x_train, y_train, alpha = 0, lambda = cv_ridge$lambda.1se, weights = w_train_cc)
@@ -105,9 +99,7 @@ mae_ridge
 ```
 
 ```{r echo=FALSE}
-#-------------------------------
-# Top coefficients by magnitude 
-#-------------------------------
+
 coef_mat <- as.matrix(coef(ridge_fit))
 coef_tbl <- tibble(
   term = rownames(coef_mat),
@@ -119,6 +111,6 @@ coef_tbl <- tibble(
 
 coef_tbl %>%
   gt() %>%
-  tab_header(title = "Ridge: Top 15 Coefficients (absolute value)") %>%
+  tab_header(title = "Ridge Coefficients") %>%
   fmt_number(columns = coef, decimals = 3)
 ```
