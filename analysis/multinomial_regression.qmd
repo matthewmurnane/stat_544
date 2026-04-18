@@ -29,14 +29,18 @@ data_selected <- data %>%
                                             "Citizen")),
              
     income_bracket = case_when(
-      income_household < 56600 ~ "<$56,600",
-      income_household >= 56600 & income_household <= 169800 ~ "$56,600–$169,800",
-      income_household > 169800 ~ ">$169,800",
+      income_household < 15000 ~ "<$15,000",
+      income_household >= 15000 & income_household <= 30000 ~ "$15,000–$30,000",
+      income_household > 30000 & income_household <= 60000 ~ "$30,000–$60,000",
+      income_household > 60000 & income_household <= 90000 ~ "$60,000–$90,000",
+      income_household > 90000 & income_household <= 120000 ~ "$90,000–$120,000",
+      income_household > 120000 & income_household <= 150000 ~ "$120,000–$150,000",
+      income_household > 150000 ~ ">$150,000",
       TRUE ~ NA_character_),
     
     income_bracket = factor(
       income_bracket,
-      levels = c("<$56,600", "$56,600–$169,800", ">$169,800")))%>% 
+      levels = c("<$15,000", "$15,000–$30,000", "$30,000–$60,000", "$60,000–$90,000", "$90,000–$120,000", "$120,000–$150,000", ">$150,000")))%>% 
   select(income_bracket, age, race_simp, cit_simp, gross_rent, education, health_insurance,
           snap_benefits, jwtrns, puma, pwgtp, pwgtp1:pwgtp80)
 
@@ -56,7 +60,7 @@ acs_design %>%
   summarize(count = survey_total(na.rm = TRUE))
 ```
 
-### Decision Tree (ALL)
+### Decision Tree (ALL - 7 Income Brackets)
 
 ```{r}
 set.seed(0)
@@ -67,7 +71,58 @@ sample<- createDataPartition(treedata$income_bracket, p=0.8, list=FALSE)
 train<- treedata[sample,]
 test<- treedata[-sample,]
 
-tree_model <- rpart(income_bracket ~ age + race_simp + cit_simp + gross_rent + education + health_insurance + snap_benefits + jwtrns, data = train, weights = pwgtp, method = "class", control = rpart.control(cp = 0.001, maxdepth = 10, minsplit = 20))
+tree_model <- rpart(income_bracket ~ age + race_simp + cit_simp + education, data = train, weights = pwgtp, method = "class", control = rpart.control(cp = 0.001, maxdepth = 10, minsplit = 200))
+```
+
+```{r}
+testpred <- predict(tree_model, newdata = test, type = "class")
+
+confusionMatrix(testpred, test$income_bracket)
+```
+```{r}
+data_selected <- data %>% 
+  mutate(cit_simp = ifelse(cit != "Not a U.S. citizen",
+                                 "Citizen",
+                                 "Non-Citizen"),
+         cit_simp = factor(cit_simp,
+                           levels = c("Non-Citizen",
+                                            "Citizen")),
+  income_bracket = case_when(
+    income_household < 50000 ~ "<$50,000",
+    income_household >= 50000 & income_household <= 100000 ~ "$50,000–$100,000",
+    income_household > 100000 & income_household <= 150000 ~ "$100,000–$150,000",
+    income_household > 150000 ~ ">$150,000",
+    TRUE ~ NA_character_),
+    
+    income_bracket = factor(
+      income_bracket,
+      levels = c("<$50,000", "$50,000–$100,000", "$100,000–$150,000", ">$150,000")))%>% 
+  select(income_bracket, age, race_simp, cit_simp, gross_rent, education, health_insurance,
+          snap_benefits, jwtrns, puma, pwgtp, pwgtp1:pwgtp80)
+
+rep_weights <- paste0("pwgtp", 1:80)
+
+acs_design <- data_selected %>%
+  as_survey_rep(
+    weights    = pwgtp,
+    repweights = all_of(rep_weights),
+    type       = "successive-difference",
+    mse        = TRUE)
+```
+
+
+### Decision Tree (ALL - 4 Income Brackets)
+
+```{r}
+set.seed(0)
+
+treedata <- data_selected %>%
+  filter(!is.na(income_bracket))
+sample<- createDataPartition(treedata$income_bracket, p=0.8, list=FALSE)
+train<- treedata[sample,]
+test<- treedata[-sample,]
+
+tree_model <- rpart(income_bracket ~ age + race_simp + cit_simp + education, data = train, weights = pwgtp, method = "class", control = rpart.control(cp = 0.0001, maxdepth = 10, minsplit = 200))
 ```
 
 ```{r}
@@ -92,7 +147,7 @@ sample<- createDataPartition(treedata$income_bracket, p=0.8, list=FALSE)
 train<- treedata[sample,]
 test<- treedata[-sample,]
 
-tree_model_30 <- rpart(income_bracket ~ age + race_simp + cit_simp + gross_rent + education + health_insurance + snap_benefits + jwtrns, data = train, weights = pwgtp, method = "class", control = rpart.control(cp = 0.001, maxdepth = 10, minsplit = 20))
+tree_model_30 <- rpart(income_bracket ~ age + race_simp + cit_simp + education, data = train, weights = pwgtp, method = "class", control = rpart.control(cp = 0.001, maxdepth = 10, minsplit = 20))
 ```
 
 ```{r}
@@ -121,7 +176,7 @@ sample<- createDataPartition(treedata$income_bracket, p=0.8, list=FALSE)
 train<- treedata[sample,]
 test<- treedata[-sample,]
 
-tree_model_30 <- rpart(income_bracket ~ age + race_simp + cit_simp + gross_rent + education + health_insurance + snap_benefits + jwtrns, data = train, weights = pwgtp, method = "class", control = rpart.control(cp = 0.001, maxdepth = 10, minsplit = 20))
+tree_model_30 <- rpart(income_bracket ~ age + race_simp + cit_simp + education, data = train, weights = pwgtp, method = "class", control = rpart.control(cp = 0.001, maxdepth = 10, minsplit = 20))
 ```
 
 ```{r}

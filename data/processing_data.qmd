@@ -75,7 +75,7 @@ data <- data %>%
 #Gross rent
 data$GRNTP <- as.numeric(data$GRNTP)
 data <- data %>% 
-  mutate(GRNTP = na_if(GRPIP, 0))
+  mutate(GRNTP = na_if(GRNTP, 0))
 
 #Income
 data$PINCP <- as.numeric(data$PINCP)
@@ -103,7 +103,7 @@ data <- data %>%
 # Income-to-poverty ratio
 data$POVPIP <- as.numeric(data$POVPIP)
 data <- data %>% 
-  mutate(POVPIP = na_if(GRPIP, -1))
+  mutate(POVPIP = na_if(POVPIP, -1))
 
 # Educational Attainment
 data <- data %>%
@@ -260,5 +260,9 @@ data <- data %>%
 library(arrow)
 write_parquet(data,
               "clean_data.parquet")
+```
+
+```{r}
+summary(data$gross_rent)
 ```
 
