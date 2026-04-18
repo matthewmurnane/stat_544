@@ -1,0 +1,410 @@
+---
+title: "Lasso Regression"
+format: pdf
+---
+
+```{r include=FALSE}
+library(tidyverse)
+library(arrow)
+library(glmnet)
+library(broom)
+library(gt)
+library(ggthemes)
+library(patchwork)
+
+data <- read_parquet("../data/clean_data.parquet")
+```
+
+```{r echo=FALSE}
+
+model_inputs <- data %>% 
+  dplyr::filter(
+    age > 18,
+    esr != "Not in Labor Force"
+  ) %>% 
+  dplyr::mutate(
+    cit_simp = ifelse(cit != "Not a U.S. citizen", "Citizen", "Non-Citizen"),
+    cit_simp = factor(cit_simp, levels = c("Citizen", "Non-Citizen")),
+    education = factor(
+      education,
+      levels = c(
+        "Post-bacc professional degree",
+        "Doctorate degree",
+        "Master's degree",
+        "Bachelor's degree",
+        "Associate's degree",
+        "Some college",
+        "Regular high school diploma",
+        "GED or alternative credential",
+        "Less than High School"
+      )
+    )
+  ) %>% 
+  dplyr::select(
+    income_personal, race_simp, cit_simp, education, pwgtp, age
+  )
+```
+
+```{r}
+
+model_inputs %>%
+  summarise(
+    education = names(sort(table(education), decreasing = TRUE))[1],
+    race_simp = names(sort(table(race_simp), decreasing = TRUE))[1],
+    cit_simp  = names(sort(table(cit_simp), decreasing = TRUE))[1]
+  )
+```
+
+```{r}
+lasso_data <- model_inputs %>% 
+  mutate(
+    log_income = log(income_personal),
+    education = relevel(factor(education), ref = "Bachelor's degree"),
+    race_simp = relevel(factor(race_simp), ref = "Hispanic"),
+    cit_simp  = relevel(factor(cit_simp), ref = "Citizen")
+  ) %>% 
+  filter(
+    is.finite(log_income),
+    !is.na(age),
+    !is.na(education),
+    !is.na(race_simp),
+    !is.na(cit_simp),
+    !is.na(pwgtp)
+  )
+```
+
+```{r}
+x_pop <- model.matrix(
+  log_income ~ age + education + race_simp + cit_simp +
+    education:race_simp + education:cit_simp + race_simp:cit_simp,
+  data = lasso_data
+)[, -1]
+
+y_pop <- lasso_data$log_income
+w_pop <- lasso_data$pwgtp
+```
+
+```{r}
+set.seed(544)
+
+cv_lasso_pop <- cv.glmnet(
+  x = x_pop,
+  y = y_pop,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_pop,
+  standardize = TRUE,
+  nfolds = 10
+)
+
+lasso_pop_min <- glmnet(
+  x = x_pop,
+  y = y_pop,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_pop,
+  standardize = TRUE,
+  lambda = cv_lasso_pop$lambda.min
+)
+
+lasso_pop_1se <- glmnet(
+  x = x_pop,
+  y = y_pop,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_pop,
+  standardize = TRUE,
+  lambda = cv_lasso_pop$lambda.1se
+)
+```
+
+```{r}
+pop_coef_min <- coef(lasso_pop_min) %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  rownames_to_column("term") %>%
+  rename(estimate = s0) %>%
+  filter(term != "(Intercept)", estimate != 0) %>%
+  mutate(
+    percent_change = round((exp(estimate) - 1) * 100, 1)
+  ) %>%
+  arrange(desc(abs(estimate)))
+
+pop_coef_1se <- coef(lasso_pop_1se) %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  rownames_to_column("term") %>%
+  rename(estimate = s0) %>%
+  filter(term != "(Intercept)", estimate != 0) %>%
+  mutate(
+    percent_change = round((exp(estimate) - 1) * 100, 1)
+  ) %>%
+  arrange(desc(abs(estimate)))
+```
+
+```{r}
+pop_coef_min %>%
+  gt() %>%
+  tab_header(title = "Population Lasso Results at lambda.min") %>%
+  cols_label(
+    term = "Term",
+    estimate = "Coefficient",
+    percent_change = "% Change in Income"
+  ) %>%
+  tab_source_note("Percent change is computed as exp(coefficient) - 1 for the log-income outcome.")
+```
+
+```{r}
+pop_coef_1se %>%
+  gt() %>%
+  tab_header(title = "Population Lasso Results at lambda.1se") %>%
+  cols_label(
+    term = "Term",
+    estimate = "Coefficient",
+    percent_change = "% Change in Income"
+  ) %>%
+  tab_source_note("lambda.1se is the more regularized model.")
+```
+
+```{r}
+top5_increase_pop <- pop_coef_min %>%
+  arrange(desc(estimate)) %>%
+  slice_head(n = 5) %>%
+  gt() %>%
+  tab_header(title = "Top 5 Largest Income Increases: Population Lasso") %>%
+  cols_label(
+    term = "Term",
+    estimate = "Coefficient",
+    percent_change = "% Change in Income"
+  ) %>%
+  tab_source_note("% change relative to reference category, holding all else constant")
+
+top5_decrease_pop <- pop_coef_min %>%
+  arrange(estimate) %>%
+  slice_head(n = 5) %>%
+  gt() %>%
+  tab_header(title = "Top 5 Largest Income Decreases: Population Lasso") %>%
+  cols_label(
+    term = "Term",
+    estimate = "Coefficient",
+    percent_change = "% Change in Income"
+  ) %>%
+  tab_source_note("% change relative to reference category, holding all else constant")
+
+top5_increase_pop
+top5_decrease_pop
+```
+
+LASSO FOR HISPANIC POPULATION ONLY
+
+```{r}
+model_inputs_hisp <- data %>% 
+  dplyr::filter(
+    age > 18,
+    esr != "Not in Labor Force"
+  ) %>% 
+  dplyr::mutate(
+    cit_simp = ifelse(cit != "Not a U.S. citizen", "Citizen", "Non-Citizen"),
+    cit_simp = factor(cit_simp, levels = c("Citizen", "Non-Citizen")),
+    education = factor(
+      education,
+      levels = c(
+        "Post-bacc professional degree",
+        "Doctorate degree",
+        "Master's degree",
+        "Bachelor's degree",
+        "Associate's degree",
+        "Some college",
+        "Regular high school diploma",
+        "GED or alternative credential",
+        "Less than High School"
+      )
+    )
+  ) %>% 
+  dplyr::filter(race_simp == "Hispanic") %>% 
+  dplyr::select(
+    income_personal, race_simp, cit_simp, education, pwgtp, age
+  )
+```
+
+```{r}
+model_inputs_hisp %>%
+  summarise(
+    education = names(sort(table(education), decreasing = TRUE))[1],
+    cit_simp  = names(sort(table(cit_simp), decreasing = TRUE))[1]
+  )
+
+model_inputs_hisp %>% 
+  filter(
+    education == "Regular high school diploma",
+    cit_simp == "Non-Citizen"
+  ) %>% 
+  nrow()
+```
+
+```{r}
+lasso_data_hisp <- model_inputs_hisp %>% 
+  mutate(
+    log_income = log(income_personal),
+    education = relevel(factor(education), ref = "Regular high school diploma"),
+    cit_simp  = relevel(factor(cit_simp), ref = "Non-Citizen")
+  ) %>% 
+  filter(
+    is.finite(log_income),
+    !is.na(age),
+    !is.na(education),
+    !is.na(cit_simp),
+    !is.na(pwgtp)
+  )
+```
+
+```{r}
+x_hisp <- model.matrix(
+  log_income ~ age + education + cit_simp + education:cit_simp,
+  data = lasso_data_hisp
+)[, -1]
+
+y_hisp <- lasso_data_hisp$log_income
+w_hisp <- lasso_data_hisp$pwgtp
+```
+
+```{r}
+set.seed(544)
+
+cv_lasso_hisp <- cv.glmnet(
+  x = x_hisp,
+  y = y_hisp,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_hisp,
+  standardize = TRUE,
+  nfolds = 10
+)
+
+lasso_hisp_min <- glmnet(
+  x = x_hisp,
+  y = y_hisp,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_hisp,
+  standardize = TRUE,
+  lambda = cv_lasso_hisp$lambda.min
+)
+
+lasso_hisp_1se <- glmnet(
+  x = x_hisp,
+  y = y_hisp,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_hisp,
+  standardize = TRUE,
+  lambda = cv_lasso_hisp$lambda.1se
+)
+```
+
+```{r}
+plot(cv_lasso_hisp)
+title("Hispanic-only Lasso CV Curve")
+```
+
+```{r}
+hisp_coef_min <- coef(lasso_hisp_min) %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  rownames_to_column("term") %>%
+  rename(estimate = s0) %>%
+  filter(term != "(Intercept)", estimate != 0) %>%
+  mutate(
+    percent_change = round((exp(estimate) - 1) * 100, 1)
+  ) %>%
+  arrange(desc(abs(estimate)))
+
+hisp_coef_1se <- coef(lasso_hisp_1se) %>%
+  as.matrix() %>%
+  as.data.frame() %>%
+  rownames_to_column("term") %>%
+  rename(estimate = s0) %>%
+  filter(term != "(Intercept)", estimate != 0) %>%
+  mutate(
+    percent_change = round((exp(estimate) - 1) * 100, 1)
+  ) %>%
+  arrange(desc(abs(estimate)))
+```
+
+```{r}
+hisp_coef_min %>%
+  gt() %>%
+  tab_header(title = "Hispanic-only Lasso Results at lambda.min") %>%
+  cols_label(
+    term = "Term",
+    estimate = "Coefficient",
+    percent_change = "% Change in Income"
+  ) %>%
+  tab_source_note("Percent change is computed as exp(coefficient) - 1 for the log-income outcome.")
+```
+
+```{r}
+hisp_coef_1se %>%
+  gt() %>%
+  tab_header(title = "Hispanic-only Lasso Results at lambda.1se") %>%
+  cols_label(
+    term = "Term",
+    estimate = "Coefficient",
+    percent_change = "% Change in Income"
+  ) %>%
+  tab_source_note("lambda.1se is the more regularized model.")
+```
+
+```{r}
+top5_increase_hisp <- hisp_coef_min %>%
+  arrange(desc(estimate)) %>%
+  slice_head(n = 5) %>%
+  gt() %>%
+  tab_header(title = "Top 5 Largest Income Increases: Hispanic-only Lasso") %>%
+  cols_label(
+    term = "Term",
+    estimate = "Coefficient",
+    percent_change = "% Change in Income"
+  ) %>%
+  tab_source_note("% change relative to reference category, holding all else constant")
+
+top5_decrease_hisp <- hisp_coef_min %>%
+  arrange(estimate) %>%
+  slice_head(n = 5) %>%
+  gt() %>%
+  tab_header(title = "Top 5 Largest Income Decreases: Hispanic-only Lasso") %>%
+  cols_label(
+    term = "Term",
+    estimate = "Coefficient",
+    percent_change = "% Change in Income"
+  ) %>%
+  tab_source_note("% change relative to reference category, holding all else constant")
+
+top5_increase_hisp
+top5_decrease_hisp
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

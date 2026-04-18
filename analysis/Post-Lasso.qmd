@@ -1,0 +1,530 @@
+---
+title: "Post-Lasso"
+format: pdf
+---
+
+```{r include=FALSE}
+
+
+library(tidyverse)
+library(arrow)
+library(glmnet)
+library(broom)
+library(gt)
+library(ggthemes)
+library(patchwork)
+
+data <- read_parquet("../data/clean_data.parquet")
+
+```
+
+```{r}
+# Build a valid formula from TERM labels
+make_formula_from_terms <- function(response, terms_vec) {
+  rhs <- paste(terms_vec, collapse = " + ")
+  as.formula(paste(response, "~", rhs))
+}
+
+# Raw nonzero glmnet coefficient names
+# These are model.matrix column names, not formula terms
+extract_selected_columns <- function(glmnet_fit) {
+  coef(glmnet_fit) %>%
+    as.matrix() %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("term") %>%
+    dplyr::rename(estimate = s0) %>%
+    dplyr::filter(term != "(Intercept)", estimate != 0) %>%
+    dplyr::pull(term)
+}
+
+# Convert selected model.matrix columns back to original TERM labels
+# like "education" or "education:race_simp"
+get_selected_terms <- function(design_formula, data, glmnet_fit) {
+  mm <- model.matrix(design_formula, data = data)
+  term_labels <- attr(terms(design_formula), "term.labels")
+  assign_vec <- attr(mm, "assign")
+
+  selected_cols <- extract_selected_columns(glmnet_fit)
+
+  selected_idx <- match(selected_cols, colnames(mm))
+  selected_idx <- selected_idx[!is.na(selected_idx)]
+
+  selected_term_ids <- unique(assign_vec[selected_idx])
+  selected_term_ids <- selected_term_ids[selected_term_ids != 0]
+
+  term_labels[selected_term_ids]
+}
+
+# Optional helper for prettier table labels
+clean_term_names <- function(x) {
+  x %>%
+    str_remove_all("education") %>%
+    str_remove_all("race_simp") %>%
+    str_remove_all("cit_simp")
+}
+```
+
+```{r}
+
+model_inputs <- data %>% 
+  dplyr::filter(
+    age > 18,
+    esr != "Not in Labor Force"
+  ) %>% 
+  dplyr::mutate(
+    cit_simp = ifelse(cit != "Not a U.S. citizen", "Citizen", "Non-Citizen"),
+    cit_simp = factor(cit_simp, levels = c("Citizen", "Non-Citizen")),
+    education = factor(
+      education,
+      levels = c(
+        "Post-bacc professional degree",
+        "Doctorate degree",
+        "Master's degree",
+        "Bachelor's degree",
+        "Associate's degree",
+        "Some college",
+        "Regular high school diploma",
+        "GED or alternative credential",
+        "Less than High School"
+      )
+    )
+  ) %>% 
+  dplyr::select(
+    income_personal, race_simp, cit_simp, education, pwgtp, pwgtp1:pwgtp80, age
+  )
+```
+
+```{r}
+
+lasso_data <- model_inputs %>% 
+  mutate(
+    log_income = log(income_personal),
+    education = relevel(factor(education), ref = "Bachelor's degree"),
+    race_simp = relevel(factor(race_simp), ref = "Hispanic"),
+    cit_simp  = relevel(factor(cit_simp), ref = "Citizen")
+  ) %>% 
+  filter(
+    is.finite(log_income),
+    !is.na(age),
+    !is.na(education),
+    !is.na(race_simp),
+    !is.na(cit_simp),
+    !is.na(pwgtp)
+  )
+```
+
+```{r}
+# Save the original TERM-level Lasso formula
+lasso_formula_pop <- log_income ~ age + education + race_simp + cit_simp +
+  education:race_simp + education:cit_simp + race_simp:cit_simp
+```
+
+
+```{r}
+# Create design matrix for Lasso
+x_pop <- model.matrix(
+  lasso_formula_pop,
+  data = lasso_data
+)[, -1]
+
+# Response and weights
+y_pop <- lasso_data$log_income
+w_pop <- lasso_data$pwgtp
+```
+
+```{r}
+set.seed(544)
+
+cv_lasso_pop <- cv.glmnet(
+  x = x_pop,
+  y = y_pop,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_pop,
+  standardize = TRUE,
+  nfolds = 10
+)
+
+# Fit the selected Lasso model at lambda.1se
+lasso_pop_1se <- glmnet(
+  x = x_pop,
+  y = y_pop,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_pop,
+  standardize = TRUE,
+  lambda = cv_lasso_pop$lambda.1se
+)
+```
+
+```{r}
+# raw selected COLUMN names from model.matrix
+selected_cols_pop <- extract_selected_columns(lasso_pop_1se)
+selected_cols_pop
+```
+
+
+```{r}
+# TERM-level selections
+selected_terms_pop <- get_selected_terms(
+  design_formula = lasso_formula_pop,
+  data = lasso_data,
+  glmnet_fit = lasso_pop_1se
+)
+
+selected_terms_pop
+```
+
+```{r}
+# Convert selected Lasso terms into the svyglm refit formula
+post_lasso_formula_pop <- make_formula_from_terms(
+  response = "log_income",
+  terms_vec = selected_terms_pop
+)
+
+post_lasso_formula_pop
+```
+
+```{r}
+rep_weights <- paste0("pwgtp", 1:80)
+
+pop_design <- lasso_data %>% 
+  as_survey_rep(
+    weights = pwgtp,
+    repweights = all_of(rep_weights),
+    type = "successive-difference",
+    mse = TRUE
+  )
+```
+
+```{r}
+# Refit the Lasso-selected model using survey-weighted regression
+# This gives design-based standard errors, CIs, and p-values.
+post_lasso_pop <- pop_design %>% 
+  svyglm(
+    formula = post_lasso_formula_pop,
+    design = .,
+    na.action = na.omit
+  )
+```
+
+```{r}
+# post-Lasso population results
+post_lasso_pop_full <- tidy(post_lasso_pop, conf.int = TRUE) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    term = clean_term_names(term),
+    percent_change = round((exp(estimate) - 1) * 100, 1),
+    conf_low = round((exp(conf.low) - 1) * 100, 1),
+    conf_high = round((exp(conf.high) - 1) * 100, 1),
+    estimate = round(estimate, 3),
+    std.error = round(std.error, 3),
+    statistic = round(statistic, 3),
+    p.value = ifelse(p.value < 0.001, "< .001", round(p.value, 3))
+  ) %>%
+  dplyr::select(term, percent_change, conf_low, conf_high, statistic, p.value) %>%
+  arrange(desc(percent_change))
+```
+
+```{r}
+# Full table of all post-Lasso refit terms for population
+post_lasso_pop_full %>%
+  gt() %>%
+  tab_header(title = "Table: Post-Lasso svyglm Results for Population") %>%
+  cols_label(
+    term = "Term",
+    percent_change = "% Change in Income",
+    conf_low = "95% CI Low",
+    conf_high = "95% CI High",
+    statistic = "t",
+    p.value = "p"
+  ) %>%
+  tab_source_note("Lasso selected terms at lambda.1se, then refit with survey-weighted svyglm using ACS SDR replicate weights.")
+```
+
+```{r}
+# Top 5 increases for population post-Lasso refit
+top5_increase_pop <- post_lasso_pop_full %>%
+  arrange(desc(percent_change)) %>%
+  slice_head(n = 5) %>%
+  gt() %>%
+  tab_header(title = "Top 5 Largest Income Increases: Population Post-Lasso svyglm") %>%
+  cols_label(
+    term = "Term",
+    percent_change = "% Change in Income",
+    conf_low = "95% CI Low",
+    conf_high = "95% CI High",
+    statistic = "t",
+    p.value = "p"
+  ) %>%
+  tab_source_note("Terms selected by Lasso at lambda.1se, then refit with svyglm.")
+
+# Top 5 decreases for population post-Lasso refit
+top5_decrease_pop <- post_lasso_pop_full %>%
+  arrange(percent_change) %>%
+  slice_head(n = 5) %>%
+  gt() %>%
+  tab_header(title = "Top 5 Largest Income Decreases: Population Post-Lasso svyglm") %>%
+  cols_label(
+    term = "Term",
+    percent_change = "% Change in Income",
+    conf_low = "95% CI Low",
+    conf_high = "95% CI High",
+    statistic = "t",
+    p.value = "p"
+  ) %>%
+  tab_source_note("Terms selected by Lasso at lambda.1se, then refit with svyglm.")
+
+top5_increase_pop
+top5_decrease_pop
+```
+
+HISPANIC ONLY
+
+```{r}
+# Build Hispanic-only analysis dataset following your earlier model structure
+model_inputs_hisp <- data %>% 
+  dplyr::filter(
+    age > 18,
+    esr != "Not in Labor Force"
+  ) %>% 
+  dplyr::mutate(
+    cit_simp = ifelse(cit != "Not a U.S. citizen", "Citizen", "Non-Citizen"),
+    cit_simp = factor(cit_simp, levels = c("Citizen", "Non-Citizen")),
+    education = factor(
+      education,
+      levels = c(
+        "Post-bacc professional degree",
+        "Doctorate degree",
+        "Master's degree",
+        "Bachelor's degree",
+        "Associate's degree",
+        "Some college",
+        "Regular high school diploma",
+        "GED or alternative credential",
+        "Less than High School"
+      )
+    )
+  ) %>% 
+  dplyr::filter(race_simp == "Hispanic") %>% 
+  dplyr::select(
+    income_personal, race_simp, cit_simp, education, pwgtp, pwgtp1:pwgtp80, age
+  )
+```
+
+```{r}
+# Prepare Hispanic-only modeling dataset
+lasso_data_hisp <- model_inputs_hisp %>% 
+  mutate(
+    log_income = log(income_personal),
+    education = relevel(factor(education), ref = "Regular high school diploma"),
+    cit_simp  = relevel(factor(cit_simp), ref = "Non-Citizen")
+  ) %>% 
+  filter(
+    is.finite(log_income),
+    !is.na(age),
+    !is.na(education),
+    !is.na(cit_simp),
+    !is.na(pwgtp)
+  )
+```
+
+```{r}
+# TERM-level Hispanic-only Lasso formula
+lasso_formula_hisp <- log_income ~ age + education + cit_simp + education:cit_simp
+```
+
+
+```{r}
+# Create design matrix for Hispanic-only Lasso
+x_hisp <- model.matrix(
+  lasso_formula_hisp,
+  data = lasso_data_hisp
+)[, -1]
+
+# Response and weights
+y_hisp <- lasso_data_hisp$log_income
+w_hisp <- lasso_data_hisp$pwgtp
+```
+
+```{r}
+# Fit cross-validated Hispanic-only Lasso
+set.seed(544)
+
+cv_lasso_hisp <- cv.glmnet(
+  x = x_hisp,
+  y = y_hisp,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_hisp,
+  standardize = TRUE,
+  nfolds = 10
+)
+
+# Fit selected Hispanic-only Lasso model at lambda.1se
+lasso_hisp_1se <- glmnet(
+  x = x_hisp,
+  y = y_hisp,
+  alpha = 1,
+  family = "gaussian",
+  weights = w_hisp,
+  standardize = TRUE,
+  lambda = cv_lasso_hisp$lambda.1se
+)
+```
+
+```{r}
+# raw selected COLUMN names from model.matrix
+selected_cols_hisp <- extract_selected_columns(lasso_hisp_1se)
+selected_cols_hisp
+```
+
+
+```{r}
+# Extract the exact terms selected by Hispanic-only Lasso at lambda.1se
+selected_terms_hisp <- get_selected_terms(
+  design_formula = lasso_formula_hisp,
+  data = lasso_data_hisp,
+  glmnet_fit = lasso_hisp_1se
+)
+
+selected_terms_hisp
+```
+
+```{r}
+# Convert selected Lasso terms into the svyglm refit formula
+post_lasso_formula_hisp <- make_formula_from_terms(
+  response = "log_income",
+  terms_vec = selected_terms_hisp
+)
+
+post_lasso_formula_hisp
+```
+
+```{r}
+# Build Hispanic-only replicate-weight survey design
+hisp_design <- lasso_data_hisp %>% 
+  as_survey_rep(
+    weights = pwgtp,
+    repweights = all_of(rep_weights),
+    type = "successive-difference",
+    mse = TRUE
+  )
+```
+
+```{r}
+# Refit Hispanic-only selected model with survey-weighted regression
+post_lasso_hisp <- hisp_design %>% 
+  svyglm(
+    formula = post_lasso_formula_hisp,
+    design = .,
+    na.action = na.omit
+  )
+```
+
+```{r}
+# full post-Lasso Hispanic-only results
+post_lasso_hisp_full <- tidy(post_lasso_hisp, conf.int = TRUE) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(
+    term = clean_term_names(term),
+    percent_change = round((exp(estimate) - 1) * 100, 1),
+    conf_low = round((exp(conf.low) - 1) * 100, 1),
+    conf_high = round((exp(conf.high) - 1) * 100, 1),
+    estimate = round(estimate, 3),
+    std.error = round(std.error, 3),
+    statistic = round(statistic, 3),
+    p.value = ifelse(p.value < 0.001, "< .001", round(p.value, 3))
+  ) %>%
+  dplyr::select(term, percent_change, conf_low, conf_high, statistic, p.value) %>%
+  arrange(desc(percent_change))
+```
+
+```{r}
+# Full table of all post-Lasso refit terms for Hispanic-only model
+post_lasso_hisp_full %>%
+  gt() %>%
+  tab_header(title = "Table: Post-Lasso svyglm Results for Hispanic-only Population") %>%
+  cols_label(
+    term = "Term",
+    percent_change = "% Change in Income",
+    conf_low = "95% CI Low",
+    conf_high = "95% CI High",
+    statistic = "t",
+    p.value = "p"
+  ) %>%
+  tab_source_note("Lasso selected terms at lambda.1se, then refit with survey-weighted svyglm using ACS SDR replicate weights.")
+```
+
+```{r}
+# Top 5 increases for Hispanic-only post-Lasso refit
+top5_increase_hisp <- post_lasso_hisp_full %>%
+  arrange(desc(percent_change)) %>%
+  slice_head(n = 5) %>%
+  gt() %>%
+  tab_header(title = "Top 5 Largest Income Increases: Hispanic-only Post-Lasso svyglm") %>%
+  cols_label(
+    term = "Term",
+    percent_change = "% Change in Income",
+    conf_low = "95% CI Low",
+    conf_high = "95% CI High",
+    statistic = "t",
+    p.value = "p"
+  ) %>%
+  tab_source_note("Terms selected by Lasso at lambda.1se, then refit with svyglm.")
+
+# Top 5 decreases for Hispanic-only post-Lasso refit
+top5_decrease_hisp <- post_lasso_hisp_full %>%
+  arrange(percent_change) %>%
+  slice_head(n = 5) %>%
+  gt() %>%
+  tab_header(title = "Top 5 Largest Income Decreases: Hispanic-only Post-Lasso svyglm") %>%
+  cols_label(
+    term = "Term",
+    percent_change = "% Change in Income",
+    conf_low = "95% CI Low",
+    conf_high = "95% CI High",
+    statistic = "t",
+    p.value = "p"
+  ) %>%
+  tab_source_note("Terms selected by Lasso at lambda.1se, then refit with svyglm.")
+
+top5_increase_hisp
+top5_decrease_hisp
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
