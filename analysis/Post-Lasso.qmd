@@ -423,7 +423,7 @@ post_lasso_hisp <- hisp_design %>%
 ```
 
 ```{r}
-# full post-Lasso Hispanic-only results
+# Tidy and format full post-Lasso Hispanic-only results
 post_lasso_hisp_full <- tidy(post_lasso_hisp, conf.int = TRUE) %>%
   filter(term != "(Intercept)") %>%
   mutate(

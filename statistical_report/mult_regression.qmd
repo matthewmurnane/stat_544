@@ -294,3 +294,37 @@ all_inputs_hisp <- tidy(mult_reg_back_hisp, conf.int = TRUE) %>%
 all_inputs_hisp
 ```
 
+```{r}
+
+sig_coefs_hisp <- tidy(mult_reg_back_hisp, conf.int = TRUE) %>%
+  filter(p.value < 0.05, term != "(Intercept)") %>%
+  mutate(
+    term           = str_remove_all(term, "education|cit_simp"),
+    percent_change = round((exp(estimate) - 1) * 100, 1),
+    estimate       = round(estimate, 3),
+    std.error      = round(std.error, 3),
+    statistic      = round(statistic, 3),
+    p.value        = ifelse(p.value < 0.001, "< .001", 
+                            round(p.value, 3)),
+    conf_low       = round((exp(conf.low) - 1) * 100, 1),
+    conf_high      = round((exp(conf.high) - 1) * 100, 1)
+  ) %>%
+  dplyr::select(term, percent_change, conf_low, conf_high, statistic, p.value)
+
+# Top 5 increases for Hispanic-only model
+top5_increase_hisp <- sig_coefs_hisp %>%
+  arrange(desc(percent_change)) %>%
+  slice_head(n = 5) %>%
+  make_gt("MLR Top 5 Largest Income Increases for Hispanic Population")
+
+# Top 5 decreases for Hispanic-only model
+top5_decrease_hisp <- sig_coefs_hisp %>%
+  arrange(percent_change) %>%
+  slice_head(n = 5) %>%
+  make_gt("MLR Top 5 Largest Income Decreases for Hispanic Population")
+
+top5_increase_hisp
+top5_decrease_hisp
+
+```
+
