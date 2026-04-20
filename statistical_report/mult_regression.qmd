@@ -296,7 +296,7 @@ all_inputs_hisp
 
 ```{r}
 
-sig_coefs_hisp <- tidy(mult_reg_back_hisp, conf.int = TRUE) %>%
+sig_coefs_hisp_mlr <- tidy(mult_reg_back_hisp, conf.int = TRUE) %>%
   filter(p.value < 0.05, term != "(Intercept)") %>%
   mutate(
     term           = str_remove_all(term, "education|cit_simp"),
@@ -311,20 +311,21 @@ sig_coefs_hisp <- tidy(mult_reg_back_hisp, conf.int = TRUE) %>%
   ) %>%
   dplyr::select(term, percent_change, conf_low, conf_high, statistic, p.value)
 
-# Top 5 increases for Hispanic-only model
-top5_increase_hisp <- sig_coefs_hisp %>%
+# Top 5 increases for Hispanic-only multiple regression
+top5_increase_hisp_mlr <- sig_coefs_hisp_mlr %>%
   arrange(desc(percent_change)) %>%
   slice_head(n = 5) %>%
-  make_gt("MLR Top 5 Largest Income Increases for Hispanic Population")
+  make_gt("Top 5 Largest Income Increases: Hispanic-only Multiple Regression")
 
-# Top 5 decreases for Hispanic-only model
-top5_decrease_hisp <- sig_coefs_hisp %>%
+# Top 5 decreases for Hispanic-only multiple regression
+top5_decrease_hisp_mlr <- sig_coefs_hisp_mlr %>%
   arrange(percent_change) %>%
-  slice_head(n = 5) %>%
-  make_gt("MLR Top 5 Largest Income Decreases for Hispanic Population")
+  slice_head(n = 1) %>%
+  make_gt("Top 5 Largest Income Decreases: Hispanic-only Multiple Regression")
+#Did n=1 because the following 4 were increases and they were quite large
 
-top5_increase_hisp
-top5_decrease_hisp
+top5_increase_hisp_mlr
+top5_decrease_hisp_mlr
 
 ```
 
